@@ -1,0 +1,37 @@
+---
+title: "Lezione 1"
+author: "Paolo Bosetti"
+date: "`r Sys.Date()`"
+output:
+  pdf_document:
+    toc: true
+  html_notebook:
+    toc: true
+    number_sections: true
+---
+
+# Prima lezione: Markdown
+
+Questo è un testo di paragrafo.
+
+Paragrafi diversi devono essere separati da una (o più) linee vuote.
+
+## Formattazione in linea
+
+Questo è un **testo in grassetto** e questo *è in corsivo*.
+
+## Elenchi
+
+Elenco puntato:
+
+* questo 
+* è un esempio
+* di elenco puntato
+  - anche con sotto-elenchi
+  - come questo
+  
+Elenco numerato:
+
+1. primo
+2. secondo
+2. terzo
