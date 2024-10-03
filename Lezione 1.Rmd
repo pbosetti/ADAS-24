@@ -8,6 +8,8 @@ output:
   html_notebook:
     toc: true
     number_sections: true
+  html_document:
+    toc: true
 ---
 
 # Prima lezione: Markdown
