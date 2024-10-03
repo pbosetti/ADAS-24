@@ -3,13 +3,13 @@ title: "Lezione 1"
 author: "Paolo Bosetti"
 date: "`r Sys.Date()`"
 output:
-  pdf_document:
-    toc: true
-  html_notebook:
+  pdf_document: 
     toc: true
     number_sections: true
   html_document:
     toc: true
+  html_notebook:
+    top: true
 ---
 
 # Prima lezione: Markdown
@@ -26,14 +26,252 @@ Questo è un **testo in grassetto** e questo *è in corsivo*.
 
 Elenco puntato:
 
-* questo 
-* è un esempio
-* di elenco puntato
-  - anche con sotto-elenchi
-  - come questo
-  
+-   questo
+-   è un esempio
+-   di elenco puntato
+    -   anche con sotto-elenchi
+    -   come questo
+
 Elenco numerato:
 
-1. primo
-2. secondo
-2. terzo
+1.  primo
+2.  secondo
+3.  terzo
+
+## Equazioni in LaTeX
+
+In breve, le equazioni in LaTeX possono essere inserite sia in linea, come questa: $a=b+c$, che separatemente dal testo, in questo modo:
+
+$$
+a = b + c
+$$
+I quozienti si inseriscono come `\frac{numeratore}{denominatore}`:
+
+$$
+a = \frac{1}{b+c}
+$$
+
+Gli apici e i pedici si creano con `^` e `_`, rispettivamente. Se in apice o pedice c'è più di un carattere, questi vanno circondati da graffe:
+
+$$
+x_{ij} = \mu + \tau_i + \epsilon_{ij} 
+$$
+Come si vede, le lettere greche si ottengono anteponendo `\` al nome della lettera. Si noti che per la lettera epsilon esistono due varianti tipografiche: $\epsilon$ (`\epsilon`) e $\varepsilon$ (`\varepsilon`); per i indicare i residui si preferisce di solito la seconda.
+
+Le sommatorie e gli integrali si ottengono con `\sum` e `\int`, rispettivamente:
+
+$$
+\bar x = \frac{1}{N} \sum_{i=1}^N x_i
+$$
+e:
+
+$$
+f^-(x) = \int_{-\infty}^x f(\xi) d\xi;~~~f^+(x) = \int_x^{+\infty} f(\xi) d\xi
+$$
+Si noti che il carattere `~` indica uno spazio.
+
+Per ottenere più equazioni allineate in un blocco si usa l'ambiente `align` (si noti che in questo caso non servono i marcatori `$`):
+
+\begin{align}
+f^-(x) &= \int_{-\infty}^x f(\xi) d\xi \\
+f^+(x) &= \int_x^{+\infty} f(\xi) d\xi;
+\end{align}
+
+Dove ogni linea eccetto l'ultima deve terminare con un doppio *backslash* e il carattere `&` indica il punto di allineamento.
+
+Infine, i nomi delle funzioni più comuni (trigonometriche, esponenziali, ...) devono essere preceduti da una backslash, perché scrivere $\sin(x)$ non è come scrivere $sin(x)$ (quest'ultimo è il prodotto delle quattro variabili $s$, $i$, $n$ e $x$).
+
+## Differenze tra *Preview* e *Knit*
+
+La compilazione del notebook può essere eseguita in modalità
+
+* *Preview*: genera un'anteprima HTML del documento corrente
+* *Knit*: genera, a scelta, un HTML, un PDF o un file MSWord
+
+La modalità *Preview* utilizza l'output dei chunk R **già valutati nella sessione del notebook**. Ciò significa che se un particolare chunk non è stato eseguito (e non ha quindi generato output), il documento HTML prodotto non conterrà il grafico o il testo risultante dal chunk in questione. Quindi, prima di aggiornare la *preview* è opportuno ri-eseguire tutti i chunk (comando *Run All*). In altre parole, gli oggetti R che compaiono nell'output sono gli stessi elencati nell'environment. Il testo della preview viene automaticamente aggiornato quando si salva il file.
+
+La modalità *Knit*, invece, esegue automaticamente tutti i chunk ad ogni generazione dell'output, e lo fa **in una sessione di R separata**, con il suo proprio environment che viene distrutto a generazione terminata.
+
+Quindi, con *Knit* si è sempre sicuri che l'output sia sincronizzato con il codice, anche se per documenti lunghi la generazione può richiedere più tempo. 
+
+Con *Preview*, invece, la generazione è più rapida (ma si ottiene solo HTML), però è accurata solo durante la stesura del documento, quando ogni chunk è eseguito mano a mano che lo si completa.
+
+
+## Blocchi di codice R
+
+Un blocco di codice R da eseguire può essere inserito in quetso modo:
+
+```{r}
+2 + 2
+```
+
+Usare il menù ingranaggio per accedere alle opzioni di visualizzazione del blocco.
+
+
+# Statistica descrittiva
+
+## Media e varianza
+
+Le funzioni `mean`, `var` e `sd` forniscono la media, la varianza e la deviazione standard, rispettivamente, di un vettore passato come argomento.
+
+```{r}
+v <- c(10, 14, 12, 9, 7)
+(v.m <- mean(v))
+var(v)
+sd(v)
+sd(v)^2
+```
+
+È anche possibile valutare un'espressione R in linea: la media del vettore `v` è `r v.m`. Notare che scrivere `un testo tra backtick` è una semplice formattazione in carattere monospaziato (adatta per il codice: funzioni o nomi di variabili). Se invece dopo il primo backtick si inserise una `r` seguita da uno spazio, quanto segue verrà valutato come espressione R e il risultato verrà restituito in linea.
+
+
+## Distribuzioni
+
+In R ci sono numerose funzioni per trattare diverse distribuzioni come:
+
+* `binom`: binomiale
+* `pois`
+* `geom`
+* `unif`
+* `norm`
+* `chisq`
+* `t`
+* `f`
+
+A questi nomi di distribuzioni vanno prefisse le lettere:
+
+* `r`: per generare numeri random presi da una specifica distribuzione
+* `d`: per la PDF
+* `p`: per la probabilità, cioè la CDF
+* `q`: per la funzione quantile (inversa della CDF)
+
+Le funzioni di distribuzione si ottengono quindi combinando l'opportuno prefisso con il nome breve della distribuzione. Ad esempio, `qnorm()` è la funzione quantile della distribuzione normale.
+
+La **generazione di numeri casuali** si ottiene con le funzioni `r*`. Si tratta in realtà di numeri *pseudo-casuali*, la cui sequenza può essere resa ripetibile impostando forzatamente un seme specifico mediante la funzione `set.seed`:
+
+```{r}
+set.seed(0)
+rnorm(10)
+```
+
+Possiamo generare un vettore di numeri e calcolare i relativi stimatori. Nota che rieseguiendo lo stesso blocco si ottengono ogni volta stime differenti, a riprova del fatto che gli stimatori di un campione casuale sono a loro volta variabili aleatorie:
+
+```{r}
+v2 <- rnorm(100, mean=10, sd=3)
+mean(v2)
+sd(v2)
+```
+
+## Grafici
+
+Il modo più semplice di creare un grafico con **R base** è mediante la funzione `plot`:
+
+```{r}
+s <- rchisq(100, 10)
+plot(s)
+```
+
+Più avanti utilizzeremo esclusivamente la nuova interfaccia Tidyverse, ma per il momento `plot` è più semplice.
+
+Per aggiungere una seconda serie ad un primo grafico si utilizza la funzione `points` o `lines`. Si noti che i limiti del grafico vengono definiti dalla prima chiamata a `plot` e **non vengono modificati** dalle successive serie. Se essi sono troppo stretti, possono essere modificato con il parametro `ylim` (e `xlim`) di `plot`:
+
+```{r}
+x <- 1:10
+y <- x^2
+y2 <- 2 + 10 * x + x^2
+plot(x, y, type="b", col="red", ylim=c(0, 200))
+points(x, y2, type="b", col="blue")
+```
+
+Otteniamo ora il grafico della PDF normale. La funzione `grid` aggiunge una griglia all'ultimo grafico:
+
+```{r}
+x <- seq(-3, 3, 0.1)
+y <- dnorm(x)
+
+plot(x, y, type="l", xlab="x", ylab="Densità di probabilità")
+grid()
+```
+
+Confrontiamo la T di Student con la normale standard: come anticipato la differenza tra le due diminuisce molto rapidamente all'aumentare del numero di gradi di libertà della T, già a 50 è praticamente trascurabile:
+
+```{r}
+yt <- dt(x, 5)
+plot(x, y, type="l")
+lines(x, yt, lty=2)
+lines(x, dt(x, 50), lty=3)
+```
+
+## Istogrammi
+
+Gli istogrammi si ottengono passando il solo vettore alla funzione `hist`. Si noti che di default in ordinata si ha il **conteggio** delle osservazioni. Per un confronto con la PDF della distribuzione è necessario specificare che si desidera la densità di osservazioni sull'asse ordinato, cioè il conteggio diviso per il totale delle osservazioni (opzione `freq=FALSE`):
+
+```{r}
+v <- rnorm(1000)
+hist(v, freq=FALSE)
+lines(x, dnorm(x), col="red")
+```
+
+Il confronto con una distribuzione di riferimento può essere effettuato anche con la cumulata, usando la funzione `ecdf`, cioè *Empirical Cumulated Distribution Function*, l'equivalente campionario della CDF:
+
+```{r}
+plot(ecdf(v))
+lines(x, pnorm(x), col="red")
+```
+
+È spesso utile calcolare i quantili di un campione:
+
+```{r}
+quantile(v)
+```
+
+Se si desiderano valtare i quantili per differenti probabilità è possibile usare il parametro `probs`:
+
+```{r}
+quantile(v, probs=seq(0, 1, length.out=4))
+quantile(v, probs=(0:10)/10)
+quantile(v, 0.7)
+```
+
+Possiamo aggiungere quantili e relative probabilità alla cumulata del campione:
+
+```{r}
+probs <- seq(0, 1, length.out=5)
+plot(ecdf(v))
+lines(x, pnorm(x), col="red")
+abline(h=probs, lty=2)
+abline(v=quantile(v, probs=probs), lty=2)
+```
+
+
+# Data frame
+
+Uno dei modi più efficaci di raccogliere dati è il **data frame**: si tratta di una tabella con colonne nominate e potenzialmente eterogenee:
+
+```{r}
+N <- 100
+df <- data.frame(
+  x = seq(-3, 3, length.out=N),
+  y = rnorm(N),
+  y2 = rnorm(N, 1, 0.5)
+)
+
+str(df)
+```
+
+Si ricordi che è possibile aggiungere una colonna ad un data frame in qualsiasi momento, a patto che il vettore che si aggiunge abbia la stessa lunghezza delle colonne già presenti:
+
+```{r}
+df$y
+df$y3 <- runif(N)
+```
+
+Raccogliere i dati in data frame anziché in vettori consente di utilizzare, ad esempio, le funzioni di plot secondi una sintassi più efficiente:
+
+```{r}
+plot(y~x, data=df)
+points(y2~x, data=df, col="red")
+```
+
+Questa sintassi utilizza quella che si chiama una **formula**: `y~x`, che si legge come "$y$ funzione di $x$".
+
