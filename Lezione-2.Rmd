@@ -1,0 +1,294 @@
+---
+title: "Tidyverse"
+author: "Paolo Bosetti"
+date: "`r Sys.Date()`"
+output:
+  pdf_document: 
+    toc: true
+    number_sections: true
+  html_document:
+    toc: true
+  html_notebook:
+    top: true
+---
+
+```{r setup, message=FALSE, warning=FALSE, include=FALSE}
+# ATTENZIONE: questo è un blocco di setup: viene eseguito automaticamente PRIMA 
+# di eseguire qualunque blocco successivo. Fate la prova: riavviate RStudio, 
+# Aprite questo file e eseguite ad esempio il secondo blocco R. Vedrete che 
+# questo blocco viene eseguito per primo.
+
+# ATTENZIONE: se cliccate sul menu ingranaggio DOPO aver chiamato questo blocco
+# "setup", modificate le "Default chunk options", cioè le opzioni per tutti i 
+# blocchi successivi. Quindi se disabilitate la visualizzazione del codice, 
+# la disabilitate per tutti i blocchi successivi. Ve ne accorgete perché compare
+# qualcosa di simile:
+#  knitr::opts_chunk$set(eval = FALSE, include = FALSE)
+# Se invece volete personalizzare SOLO QUESTO blocco, inserite a mano le opzioni 
+# del blocco, come sopra, oppure rimuovete il nome "setup", cliccate 
+# sull'ingranaggio, modificate le impostazioni e aggiungete il nome setup.
+
+# Carico qui le librerie:
+library(tidyverse)
+
+# Eseguo lo script con le mie funzioni personalizzate:
+source("my_lib.R")
+```
+
+
+# Tidyverse
+
+`Tidyverse` è una meta-libreria, cioè una collezione di librerie, che trasforma il modo in cui si utilizza R per descrivere algoritmi di manipolazione e analisi dati.
+
+
+## Pipe
+
+La prima trasformazione introdotta da tidyverse è l'introduzione dell'**operatore *pipe***. Una *pipe* è un condotto che passa l'output di una funzione all'input di una seconda funzione. Lo scopo è di rendere il codice più leggibile, evitando funzioni nidificate, e efficiente, evitando eccessive variabili intermedie. Utilizzando una *pipe* si riscrive una generica espressione `f(x, y, ...)` come `x %>% f(y, ...)`. Generalmente la *pipe* è indicata con `%>%`, ma esiste anche la forma alternativa `|>`.
+
+In R standard:
+
+```{r}
+round(mean(rnorm(10)), 2)
+```
+
+Questa espressione è particolarmente scomoda da leggere (la prima operazione è quella più interna) e prona ad errori (troppe parentesi). Questa sequenza di operazioni può essere resa più chiara ricorrendo a variabili intermedie:
+
+```{r}
+v <- rnorm(10, 2)
+v.m <- mean(v)
+round(v.m, 2)
+```
+
+Ma le variabili intermedie sono meno efficienti e possono essere scomode o prone ad errori (riuso di variabili con lo stesso nome).
+
+Con l'operatore *pipe* si evitano questi problemi: le operazioni vengono chiaramente elencate una dopo l'altra in ordine logico, e l'output di ogni funzione diventa **il primo argomento** della funzione successiva:
+
+```{r}
+rnorm(10, 2) %>%  
+  mean %>% 
+  round(2)
+```
+
+
+## Tibble
+
+Le tibble sono versioni evolute dei data frame, compatibili con questi ultimi. Hanno alcuni vantaggi:
+
+1. sono più facili da creare
+2. sono più robuste
+3. sono più facili da visualizzare
+
+Nella creazione di un data frame non è possibile fare riferimento ad un'altra colonna, ma bisogna appoggiarsi a variabili intermedie:
+
+```{r}
+v <- c(1,7,3,10,3,2,2) # variabile intermedia
+data.frame(
+  A = v,
+  B = v^2
+)
+
+# Oppure aggiungere una colonna in un secondo momento:
+df <- data.frame(A=c(1,7,3,10,3,2,2))
+df$B <- df$A^2
+```
+
+Creando una tibble, a differenza che nei data frame, è possibile invece che una colonna faccia direttamente riferimento ad una colonna precedente:
+
+```{r}
+tbl <- tibble(
+  A = 1:10,
+  B = A^2
+)
+```
+
+Mentre un data frame viene sempre stampato per intero (che per data frame molto lunghi può essere un problema), una tibble viene sempre limitata alle prime 10 righe. Se si vogliono più (o meno) righe, bisogna stamparla con la funzione `print` passando l'opzione `n`:
+
+```{r}
+tibble(
+  A=1:100,
+  B=NA
+) %>% print(n=20)
+```
+
+Si osservi che le colonne passate a `tibble` devono avere tutte la stessa lunghezza oppure lunghezza pari a 1. In quest'ultimo caso il singolo valore viene ripetuto (come per `NA` nell'esempio). Nel caso di `data.frame`, invece, è possibile passare vettori più corti, con lunghezza pari a un sottomultiplo della lunghezza delle colonne più lunghe: in questo caso il vettore più corto viene *riciclato*:
+
+```{r}
+data.frame(
+  A=1:6,
+  B=c("uno", "due")
+)
+```
+
+Questo automatismo però è pericoloso (perché l'utente non se ne accorge), ed è quindi stato rimosso da `tibble`.
+
+È sempre possibile convertire una tibble in data frame e viceversa:
+
+```{r}
+tbl %>% 
+  as.data.frame() %>% 
+  tail()
+df %>% tibble() %>% str()
+```
+
+È possibile creare tibble passando i dati per riga invece che per colonna, mediante la funzione `tribble` (*TRansposed tIBBLE*). La prima riga deve contenere i nomi delle colonne preceduti da `~`:
+
+```{r}
+tribble(
+  ~x, ~y, ~z,
+  "a", 1, 10,
+  "b", 5, 8,
+  "c", 3, 12
+)
+```
+
+## Input/Output da file
+
+Esistono le versioni *tidy* delle funzioni per leggere e scrivere file di testo:
+
+* `read_csv()`
+* `read_csv2()`
+* `read_table()`
+* `read_fwf()`
+
+* `write_csv()`
+* `write_csv2()`
+* `write_table()`
+* `write_fwf()`
+
+Il principale vantaggio di queste funzioni rispetto alle equivalenti con il punto nel nome (es. `read.table`) è che esse restituiscono direttamente una tibble.
+
+Vedere il cheatsheet qui: <https://rstudio.github.io/cheatsheets/data-import.pdf>.
+
+Il sito <https://paolobosetti.quarto.pub>, nella sezione *Example data*, fornisce alcuni file con dati di esempio che useremo durante il corso. Per semplificarne il download, creiamo il file `my_lib.R` contenente la funzione indicata sul sito e lo carichiamo all'inizio di ogni notebook con il comando `source("my_lib.R")`. A questo punto possiamo caricare un file come tibble in questo modo:
+
+```{r}
+cotton <- read_table(example_url("cotton.dat"), comment="#")
+```
+
+## Gestione delle tabella dati: dplyr
+
+La libreria `dplyr` (parte di Tidyverse) fornisce funzioni utili alla manipolazione di tibbe.
+
+Tidiverse contiene alcune tibble di esempio, utili per impararne l'uso. Tra queste la tibble `starwars`:
+
+```{r}
+starwars
+```
+
+### Filtrare le righe
+
+"Filtrare" significa selezionare solo le righe che rispondono ad alcuni criteri. Ad esempio, solo i personaggi più alti di 180 cm e con capelli castani:
+
+```{r}
+starwars %>% 
+  filter(height > 180, eye_color=="brown")
+```
+
+### Riordinare le righe
+
+Altra operazione comune è riordinare una tabella secondo uno o più criteri:
+
+```{r}
+starwars %>% 
+  filter(height > 180, eye_color=="brown") %>% 
+  arrange(desc(height), mass)
+```
+
+I criteri (che devono essere espressioni logiche, quindi non confindere "=" con "==") vengono passati separati da virgole e vengono applicati in sequenza. In questo esempio, cioè i personaggi vengono *prima* ordinati per statura e poi, a pari statura, per massa.
+
+
+### Selezione di colonne
+
+Per selezionare solo alcune colonne si usa `select`:
+
+```{r}
+starwars %>% 
+  filter(height > 180, eye_color=="brown") %>% 
+  arrange(desc(height), mass) %>% 
+  select(pianeta_natale=homeworld, name:hair_color & !height) %>% 
+  slice_head(n=5)
+```
+
+Gli argomenti di `select` sono:
+
+* nomi di colonne
+* intervalli di colonne (`name:hair_color`)
+* espressioni logiche (`name:hair_color & !height`)
+* coppie `nuovo_nome = nome_precedente`
+
+
+### Modificare una colonna
+
+©on `mutate` è possibile modificare una colonna esistente o creare una nuova colonna sulla base di una o più colonne esistenti, mediante espressioni (vettorializzate!):
+
+```{r}
+starwars %>% 
+  mutate(
+    height = height / 100,
+    BMI = (mass/height^2) %>% round(1)
+  ) %>% 
+  relocate(BMI, .after=height) %>% 
+  arrange(desc(BMI))
+```
+
+Si noti `relocate`, che consente di spostare una colonna prima o dopo un'altra colonna.
+
+
+### Raggruppamento e sommario
+
+Se vogliamo raggruppare tutte le osservazioni (righe) avente una colonna in comune e applicare una funzione di aggregazione, utilizziamo `group_by` e `summarise`. La prima funzione si limita a preparare la tabella individuando i gruppi, ma non modifica nulla:
+
+```{r}
+starwars %>% 
+  group_by(species, sex)
+```
+
+La seconda funzione crea di fatto i sommari, in questo caso come media dei valori:
+
+```{r}
+starwars %>% 
+  group_by(species, sex) %>%
+  summarise(
+    height = mean(height, na.rm=TRUE),
+    mass = mean(mass, na.rm=T)
+  ) %>% 
+  arrange(desc(height))
+```
+
+Per inciso, si noti che la funzione `mean` specifica `na.rm=T`, cioè di omettere tutti i valori `NA` nel calcolare la media:
+
+```{r}
+mean(c(1, NA, 3), na.rm=T)
+```
+
+
+### Riorganizzazione
+
+Nel linguaggio dell'analisi dati si dice che si preferiscono dati organizzati in maniera *tidy*, cioè **un'osservazione per riga, un osservando per colonna**. Per capire il significato di questa affermazione, consideriamo un'altra tabella di esempio, `relig_income`. In questo caso, le colonne riportano il conteggio di soggetti parte di un campione statistico, raggruppati per religione (righe) e per classe di retribuzione (colonne). Questa tabella **non è *tidy***, dato che lo stesso osservando (conteggio) è distribuito su più colonne:
+
+```{r}
+relig_income
+```
+
+La tabella può essere resa *tidy* mediante `pivot_longer`:
+
+```{r}
+income <- relig_income %>% 
+  pivot_longer(
+    !religion,            # lavora su tutte le colonne tranne religion
+    names_to = "income",  # i nomi colonna finiscono nella colonna "income"
+    values_to = "count"   # i valori (conteggi) nella colonna "count"
+  )
+income
+```
+
+La trasformazione inversa si ottiene con `pivot_wider`:
+
+```{r}
+income %>% 
+  pivot_wider(
+    names_from = income,
+    values_from = count
+  )
+```
+
