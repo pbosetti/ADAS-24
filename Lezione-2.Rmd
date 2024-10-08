@@ -10,6 +10,10 @@ output:
     toc: true
   html_notebook:
     top: true
+# Questo per impostare in italiano i nomi dell'indice e eventuali 
+# etichette di figure e tabelle ("Figura" invece di "Figure")
+header-includes:
+  - \usepackage[italian]{babel}
 ---
 
 ```{r setup, message=FALSE, warning=FALSE, include=FALSE}
@@ -28,9 +32,6 @@ output:
 # del blocco, come sopra, oppure rimuovete il nome "setup", cliccate 
 # sull'ingranaggio, modificate le impostazioni e aggiungete il nome setup.
 
-# Carico qui le librerie:
-library(tidyverse)
-
 # Eseguo lo script con le mie funzioni personalizzate:
 source("my_lib.R")
 ```
@@ -40,10 +41,29 @@ source("my_lib.R")
 
 `Tidyverse` è una meta-libreria, cioè una collezione di librerie, che trasforma il modo in cui si utilizza R per descrivere algoritmi di manipolazione e analisi dati.
 
+```{r}
+library(tidyverse)
+```
+
+Caricando la libreria si vede che in effetti si tratta di 9 librerie separate:
+
+1. `tibble`: data frame evoluti
+1. `readr`: lettura/scritura file
+1. `dplyr`: manipolazione dati
+1. `tidyr`: riorganizzazione di data frame 
+1. `ggplot2`: realizzazione grafici
+1. `purrr`: programmazione funzionale (mappe)
+1. `stringr`: manipolazione stringhe
+1. `forcats`: manipolazione fattori
+1. `lubridate`: manipolazione date e intervalli di tempo
+
+Noi vedremo in particolare le prime 6. Ciascuna di queste librerie, se necessario, può essere caricata separatamente, oppure possiamo caricarle tutte come `tidyverse`.
+
+Si noti che il messaggio di conflitto ottenuto al caricamento è atteso e del tutto normale.
 
 ## Pipe
 
-La prima trasformazione introdotta da tidyverse è l'introduzione dell'**operatore *pipe***. Una *pipe* è un condotto che passa l'output di una funzione all'input di una seconda funzione. Lo scopo è di rendere il codice più leggibile, evitando funzioni nidificate, e efficiente, evitando eccessive variabili intermedie. Utilizzando una *pipe* si riscrive una generica espressione `f(x, y, ...)` come `x %>% f(y, ...)`. Generalmente la *pipe* è indicata con `%>%`, ma esiste anche la forma alternativa `|>`.
+Oltre alle 9 librerie sopra elencate, `tidyverse` fornisce l'**operatore *pipe***. Una *pipe* è un *condotto* che passa l'output di una funzione all'input di una seconda funzione. Lo scopo è di rendere il codice più leggibile, evitando funzioni nidificate, e efficiente, evitando eccessive variabili intermedie. Utilizzando una *pipe* si riscrive una generica espressione `f(x, y, ...)` come `x %>% f(y, ...)`. Generalmente la *pipe* è indicata con `%>%`, ma esiste anche la forma alternativa `|>`.
 
 In R standard:
 
