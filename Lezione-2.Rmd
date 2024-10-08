@@ -162,8 +162,24 @@ Vedere il cheatsheet qui: <https://rstudio.github.io/cheatsheets/data-import.pdf
 Il sito <https://paolobosetti.quarto.pub>, nella sezione *Example data*, fornisce alcuni file con dati di esempio che useremo durante il corso. Per semplificarne il download, creiamo il file `my_lib.R` contenente la funzione indicata sul sito e lo carichiamo all'inizio di ogni notebook con il comando `source("my_lib.R")`. A questo punto possiamo caricare un file come tibble in questo modo:
 
 ```{r}
-cotton <- read_table(example_url("cotton.dat"), comment="#")
+read_table(example_url("cotton.dat"))
 ```
+A quanto pare, l'importazione non è andata a buon fine. Scarichiamo il file grezzo per capire come mai:
+
+```{r}
+read_file(example_url("cotton.dat")) %>%
+  str_trunc(200) %>% # Tronco ai primi 200 caratteri
+  cat()              # Stampo la stringa risultante
+```
+
+Le prime 4 righe in effetti sono commenti che iniziano col carattere `#`, quindi è opportuno specificare il carattere di commento in `read_table`:
+
+```{r}
+data <- read_table(example_url("cotton.dat"), comment = "#")
+data
+```
+
+
 
 ## Gestione delle tabella dati: dplyr
 
