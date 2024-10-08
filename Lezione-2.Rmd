@@ -3,15 +3,13 @@ title: "Tidyverse"
 author: "Paolo Bosetti"
 date: "`r Sys.Date()`"
 output:
+  html_notebook:
+    top: true
+  html_document:
+    toc: true
   pdf_document: 
     toc: true
     number_sections: true
-  html_document:
-    toc: true
-  html_notebook:
-    top: true
-# Questo per impostare in italiano i nomi dell'indice e eventuali 
-# etichette di figure e tabelle ("Figura" invece di "Figure")
 header-includes:
   - \usepackage[italian]{babel}
 ---
