@@ -3,15 +3,16 @@ title: "Tidyverse"
 author: "Paolo Bosetti"
 date: "`r Sys.Date()`"
 output:
-  html_notebook:
-    top: true
-  html_document:
-    toc: true
-  pdf_document: 
+  pdf_document:
     toc: true
     number_sections: true
-header-includes:
-  - \usepackage[italian]{babel}
+  html_document:
+    toc: true
+  word_document:
+    toc: true
+  html_notebook:
+    top: true
+header-includes: \usepackage[italian]{babel}
 ---
 
 ```{r setup, message=FALSE, warning=FALSE, include=FALSE}
@@ -33,6 +34,7 @@ header-includes:
 # Eseguo lo script con le mie funzioni personalizzate:
 source("my_lib.R")
 ```
+
 
 
 # Tidyverse
@@ -326,3 +328,231 @@ income %>%
   )
 ```
 
+## Programmazione funzionale e mappatura di funzioni
+
+Gran parte delle funzioni R opera direttamente su vettori, elemento per elemento, quindi generalmente non c'è bisogno di loop. Per i casi in cui sia necessario operare la stessa trasformazione su tutti gli elementi di un vettore e la trasformazione in questione non è vettorializzata, è possibile utilizzare le [funzioni di `purrr`](https://rstudio.github.io/cheatsheets/purrr.pdf).
+
+In generale esiste una famiglia di funzioni il cui nome comincia con `map_` seguito da un suffisso che indica il tipo del vettore generato (`_int`, `_dbl`, `_chr`, ecc.). Il primo argomento (eventualmente passato via pipe) è il vettire su cui operare, il secondo è una funzione di un solo argomento:
+
+```{r}
+map_dbl(1:3, function(x) {x*2})
+```
+
+La funzione può essere abbreviata, sostituendo `function(x)` con `~`, e `x` con `.`:
+
+```{r}
+1:3 %>%  map_dbl(~ .*2) %>% str()
+```
+
+Come si vede, il suffisso **garantisce** sul tipo di vettore che si ottiene:
+
+```{r}
+1:10 %>% map_int(~ . * 2) %>%  str()
+```
+
+Esiste anche la funzione `map` (senza sufisso), che restituisce sempre una **lista**:
+
+```{r}
+1:10 %>% map(~ .*2) %>% str()
+```
+
+Per fare un esempio d'uso, riprendiamo la tabella `income` (versione *tidy* di `relig_income`). Vogliamo esprimere le quote in percentuale anziché in numero assoluto. Per questo ci servono i totali di individui in ogni categoria.
+
+Calcoliamo la dimensione del campione per ogni religione:
+
+```{r}
+income %>% 
+  group_by(religion) %>% 
+  summarise(total = sum(count))
+```
+
+L'uso in sequenza di `group_by` e `summarise` è così comune che le ultime versioni di `dplyr` consentono una semplificazione:
+
+```{r}
+totals <- income %>% 
+  summarise(total = sum(count), .by=religion)
+```
+
+Ora possiamo aggiungere una colonna con la percentuale:
+
+```{r}
+income %>% 
+  mutate(
+    total = map_dbl(religion, ~ totals[totals$religion==.,]$total),
+    perc = (count/total*100) %>% round(2)
+  )
+```
+
+Oppure, in un colpo solo:
+
+```{r}
+income %>% 
+  mutate(
+    perc = map2_dbl(religion, count, ~ (.y/totals[totals$religion == .x,]$total * 100) %>% round(2) )
+  )
+```
+
+In realtà, l'operazione sopra eseguita consiste di unire due tabelle secondo una colonna comune, che agisce da cerniera. Questa operazione nel linguaggio dei database si chiama *left join*, e la libreria `dplyr` fornisce proprio una funzione equivalente:
+
+```{r}
+income %>% 
+  left_join(totals, by="religion") %>% # "religion" è la colonna che fa da cerniera per l'unione
+  mutate(
+    perc = (count/total*100) %>% round(2)
+  )
+```
+
+Anche in colpo solo, evitando di definire la tabella `totals` e creandola invece al volo:
+
+```{r}
+income %>% 
+  left_join(summarise(., total=sum(count), .by=religion)) %>% 
+  mutate(perc = (count/total*100) %>% round(2))
+```
+Notare che la pipe passa un oggetto come primo argomento alla funzione successiva, e se si vuole riutilizzare lo stesso argomento in altre posizioni basta usare la variabile speciale `.`, come sopra in `summarise(., ...`.
+
+
+
+# Grafici con `ggplot2`
+
+D'ora in avanti non utilizzeremo più le funzioni di plot base di R, ma ricorreremo piuttosto alla libreria `ggplot2` im clusa in `tidyverse`. È una libreria studiata per realizzare grafici di alta qualità evitando soluzioni che sono considerate fuorvianti o poco chiare.
+
+La libreria è basata sulla funzione `ggplot`, che accetta come primo argomento un data frame o una tibble.
+
+Il secondo argomento è chiamato *mapping* e rappresenta l'*estetica*, cioè definisce il ruolo delle varie colonne della tibble (ascissa, ordinata, colore, gruppo, ecc.). Il mapping si crea con la funzione `aes` (che sta per *aesthetics*):
+
+```{r}
+tibble(
+  v1 = 1:10,
+  v2 = v1 ^ 2,
+  v3 = v2 + 10
+) %>% 
+  ggplot(aes(x=v1, y=v2)) 
+```
+
+Come si nota, `ggplot` da sola non crea nessun grafico, ma le etichette degli assi sono giuste e l'estensione degli assi stessi è sufficiente a contenere tutti i dati nella tibble.
+
+Per aggiungere serie grafiche si usano comandi di *geometria*, che iniziano con il suffisso `geom_`:
+
+```{r}
+tibble(
+  v1 = 1:10,
+  v2 = v1 ^ 2,
+  v3 = v2 + 10
+) %>% 
+  ggplot(aes(x=v1, y=v2)) +
+  geom_line() +
+  geom_point(color="red", size=4)
+```
+
+Per aggiungere una seconda serie è necessario specificare una differente estetica in una differente geometria. La logica è:
+
+* le estetiche comuni alle varie serie (ad esempio l'ascissa) si mettono in `ggplot`
+* le estetiche proprie di ciascuna serie (le ordinate) si mettono nelle geometrie
+
+```{r}
+df <- tibble(
+  t = 1:10,
+  v1 = t ^ 2,
+  v2 = v1 + 10
+) 
+
+df %>% 
+  ggplot(aes(x=t)) +
+  geom_line(aes(y=v1), color="red") +
+  geom_line(aes(y=v2), color="green") +
+  labs(x="Tempo", y="Tensione", title="Esempio")
+```
+
+In realtà, se i dati sono in formato *tidy* le serie possono essere definite mediante l'estetica stessa, ottenendo automaticamente anche la legenda:
+
+```{r}
+df %>% 
+  pivot_longer(v1:v2) %>% # rendo la tibble tidy
+  ggplot(aes(x=t, y=value)) +
+  geom_line(aes(color=name)) +
+  geom_point(color="blue") +
+  labs(
+    x="Tempo (s)",
+    y="Tensione (V)",
+    title="Misure di tensione",
+    color="Sensore"
+  )
+```
+
+Da notare:
+
+* estetiche come `color` (e `linewidth`, `linestyle`, `fill`, `shape`, ecc.) possono essere specificate 
+  - nella funzione `aes`, e fungono da aggregatori di serie
+  - come argomenti di `geom_`, e si applicano a tutti gli oggetti di quella geometria
+* la funzione `labs` consente di specificare le etichette per assi, grafico *e legenda*
+
+Vogliamo ora realizzare qualche grafico per illustrare i dati di reddito nella tabella `income`. Anzitutto trasformiamo la colonna `income` da stringa in colonna numerica, che si servirà più avanti per poter riordinare i dati: Ci creiamo una tibble di supporto che definisce le corrispondenze numeriche per ogni intervallo di reddito:
+
+```{r}
+(values <- tibble(
+  income = relig_income %>% select(!religion) %>% names(),
+  v = c((1:5)*10, 75, 100, 150, 300, 0)
+))
+```
+
+Con un *left join* importiamo questi valorin nella tabella originale:
+
+```{r}
+income2 <- income %>% 
+  left_join(values) %>% 
+  rename(income_n=v) %>% 
+  relocate(income_n, .after=income) %>% 
+  left_join(summarise(., total=sum(count), .by=religion)) %>% 
+  mutate(
+    income = factor(income, ordered=T, levels=values$income),
+    perc = (count/total*100) %>% round(2)
+  )
+
+income2
+```
+Si noti che la colonna `income` è stata ridefinita come `factor(income, ordered=T, levels=values$income)`: in questo modo gli intervalli di reddito vengono rappresentati come fattori (cioè variabili categoriche) ordinati (`ordered=T`) secondo la sequenza logica (come in `values$income`).
+
+Possiamo ora realizzare un grafico a barre sovrapposte, filtrando solo le righe per cui `income_n != 0`:
+
+```{r}
+income2 %>% 
+  filter(income_n != 0) %>%
+  ggplot(aes(x=religion, y=perc, fill=income)) +
+  geom_col() +
+  coord_flip() +
+  scale_fill_viridis_d()
+```
+
+Il grafico, infine, può essere migliorato ordinando le religioni in funzione di quelle che hanno la categoria dei più ricchi più numerosa. Per ottenere questo risultato cambiamo la sequenza di ordinazione del fattore `religion`:
+
+```{r}
+religion_ord <- income2 %>% 
+  filter(income_n == 300) %>% # considero solo i più ricchi
+  arrange(desc(perc)) %>%     # in ordine decrescente
+  pull(religion) %>%          # estraggo solo la colonna religion
+  factor(ordered = T)         # trasformo in vettore ordinato
+
+religion_ord
+```
+Ora trasformo `income2` modificando l'ordine intrinseco del fattore `religion` e rifaccio il grafico:
+
+```{r}
+income2 %>% 
+  mutate(
+    religion = factor(religion, levels=religion_ord, ordered=T)
+  ) %>% 
+  filter(income_n != 0) %>% 
+  ggplot(aes(x=religion, y=perc, fill=income)) +
+  geom_col() +
+  geom_hline(yintercept=100, linetype=2) +
+  coord_flip() +
+  scale_fill_viridis_d() +
+  labs(
+    x="Religione",
+    y="Sul totale (%)",
+    fill="Reddito"
+  )
+```
+
+Esercizio: usando un *left join* tradurre i nomi delle religioni nel grafico.
