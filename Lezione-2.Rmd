@@ -496,7 +496,7 @@ Vogliamo ora realizzare qualche grafico per illustrare i dati di reddito nella t
 ))
 ```
 
-Con un *left join* importiamo questi valorin nella tabella originale:
+Con un *left join* importiamo questi valori nella tabella originale:
 
 ```{r}
 income2 <- income %>% 
@@ -556,3 +556,207 @@ income2 %>%
 ```
 
 Esercizio: usando un *left join* tradurre i nomi delle religioni nel grafico.
+
+
+# Statistica inferenziale
+
+## Test di Student
+
+Caso più generale: test a due campioni, a due lati: creiamo due campioni `s1`e `s2` a partire dalla distribuzione normale. I due campioni avranno dimensioni differenti e saranno estratti da popolazioni con valori attesi e varianze *leggermente* differenti:
+
+```{r}
+set.seed(321)
+
+m <- c(10.1, 10.2)
+s <- c(0.2, 0.1)
+n <- c(10, 14)
+
+s1 <- rnorm(n[1], m[1], s[1])
+s2 <- rnorm(n[2], m[2], s[2])
+
+ggplot() +
+  geom_point(aes(x=1:n[1], y=s1, color="s1")) +
+  geom_point(aes(x=1:n[2], y=s2, color="s2")) +
+  geom_hline(aes(color="s1", yintercept=mean(s1))) +
+  geom_hline(aes(color="s2", yintercept=mean(s2))) +
+  labs(x="ordine", y="valore", color="campione")
+```
+
+Per prima cosa è necessario effettuare un test della varianza:
+
+```{r}
+(vt <- var.test(s1, s2))
+```
+Il $p$-value pari a `r vt$p.value %>% round(3)` corrisponde ad una probabilità di errore troppo alta per poter scartare l'ipotesi nulla: di conseguenza, concludiamo che **i due campioni provengono da popolazioni con la medesima varianza**, cioè sono campioni omoschedastici.
+
+A questo punto posso procedere col test di Student, specificando opportunamente l'opzione `var.equal` (con una soglia del 5% sulla probabilità d'errore di tipo I):
+
+```{r}
+(tt <- t.test(s1, s2, var.equal = (vt$p.value > 0.05), conf.level=0.99))
+```
+
+Concludiamo che, con una probabilità d'errore pari a `r tt$p.value %>% round(3)`, i due campioni **non possono provenire dalla stessa popolazione**, cioè che vale $H_1:~\mu1\neq\mu2$.
+
+Il T-test riporta le seguenti informazioni notevoli:
+
+* la statistica di test $t_0=`r tt$statistic`$
+* i gradi di libertà $n_1+n_2-2=`r sum(n)-2`$
+* il *p*-value `r tt$p.value`
+* i limiti dell'intervallo di confidenza
+
+La coppia di ipotesi effettivamente verificate è:
+
+\begin{align*}
+H_0 &: \mu_1-\mu_2 = \mu_0 \\
+H_1 &: \mu_1-\mu_2 \neq \mu_0
+\end{align*}
+dove $\mu_0$ è il parametro `mu=0` usato nella funzione `t.test()`.
+
+Come detto sopra, solo un *p*-value piccolo (solitamente almeno minore di 0.05) ci consente di rigettare $H_0$.
+
+L'intervallo di confidenza **è calcolato relativamente a $\mu_0$**: se nella funzione `t.test` il valore del parametro `mu` (con default a `0`) risulta interno all'intervallo, allora si accetta $H_0$ con il livello di confidenza assegnato (`conf.level`, default a 0.95), e viceversa.
+
+### T-tes a un lato
+
+Si noti che se per gli stessi campioni si valuta il corrispondente test a un lato, osservando che $\bar s_1 < \bar s_2$:
+
+```{r}
+t.test(s1, s2, 
+       var.equal=(vt$p.value>=0.05), 
+       mu=0,
+       alternative = "less",
+       conf.level=0.95)
+```
+
+si ottiene un $p$-value minore, cioè si può scartare l'ipotesi nulla con più forza: quando cioè si può già escludere uno dei due lati, il test a un lato è **più potente** (nel senso che ha una maggior potenza).
+
+
+## Box plot
+
+Dal punto di vista grafico, la differenza tra i due campioni `s1` e `s1` può essere visualizzata con un *box-plot*.
+
+Per crearlo, riorganizziamo i dati in modo da utilizzare una tibble. La funzione `geom_boxplot()` vuole un'estetica in cui in ordinata ci siano i valori e in ascissa una variabile categorica da utilizzare come chiave di raggruppamento:
+
+```{r}
+df <- tibble(
+  i = c(1:n[1], 1:n[2]),
+  sample = c(rep("s1", n[1]), rep("s2", n[2])),
+  values = c(s1, s2)
+) 
+
+df %>% 
+  ggplot(aes(x=sample, y=values)) +
+  geom_boxplot(varwidth=T)
+
+# La tibble rende anche più semplice realizzare il grafico a dispersione:
+df %>% 
+  ggplot(aes(x=i, y=values, color=sample)) +
+  geom_point()
+```
+
+Osserviamo che per entrambi i campioni il box-plot suggerisce che i punti massimi siano delle anomalie. Verifichiamo questa possibilità.
+
+
+## Anomalie
+
+### Criterio di Chauvenet
+
+Il criterio di Chauvenet non è disponibile in R, ma è facile costruire una funzione che lo implementi:
+
+```{r}
+require(glue)
+
+chauvenet <- function(x, threshold=0.5) {
+  abs.diff <- abs(x - mean(x)) / sd(x) # vettore delle differenze
+  s0 <- max(abs.diff)                  # massima diff.
+  i0 <- which.max(abs.diff)            # posizione mass. diff.
+  freq <- length(x) * pnorm(s0, lower.tail = F)
+  result <- list(
+    s0 = s0,
+    index = i0,
+    value = x[i0],
+    reject = freq < threshold
+  )
+  samp <- deparse(substitute(x)) # restituisce l'espressione passata come argomento 'x'
+  print(glue("Chauvenet's criterion for sample {samp}"))
+  print(glue("Suspect outlier: {i0}, value {x[i0]}"))
+  print(glue("Expected frequency: {freq}, threshold: {threshold}"))
+  print(glue("Decision: {d}", d=ifelse(result$reject, "reject it", "keep it")))
+  invisible(result)                    # Il risultato resitituito e invisibile
+}
+
+cs1 <- chauvenet(s1)
+cs2 <- chauvenet(s2)
+```
+
+Si osserva che secondo questo criterio entrambi i massimi valori di `s1` e `s2` sono anomali. Decidiamo quindi di eliminarli dai rispettivi vettori, sostituendoli con `NA` (lavoriamo su una coppia dei vettori iniziali):
+
+
+```{r}
+s1_2 <- s1
+s2_2 <- s2
+
+if (cs1$reject) s1_2[cs1$index] <- NA
+if (cs2$reject) s2_2[cs2$index] <- NA
+
+s1_2
+s2_2
+```
+
+Realizziamo nuovamente il box-plot, dopo aver rimosso tutte le righe con almeno un `NA` con la funzione `na.omit()`:
+
+```{r}
+tibble(
+  i = 1:(n[1] + n[2]),
+  sample = c(rep("s1", n[1]), rep("s2", n[2])),
+  values = c(s1_2, s2_2)
+) %>% 
+  na.omit() %>% 
+  ggplot(aes(x=sample, y=values)) +
+  geom_boxplot(varwidth=T)
+```
+
+### Test di Grubb
+
+Nella realtà, piùttosto che applicare il test di Chauvenet si preferisce ricorrere al test di Grubb (fornito dalla funzione `grubbs.test()` del pacchetto `outliers`):
+
+```{r}
+library(outliers)
+grubbs.test(s1)
+```
+
+la quale conferma che il punto massimo di `s1` è un'anomalia. Dato che però il test di Grubb non fornisce *l'indice* dell'elemento anomalo, è necessario ricavarlo manualmente come indice dell'elemento col massimo scarto rispetto alla media del campione:
+
+```{r}
+which.max(abs(s1 - mean(s1)))
+```
+
+
+
+# Esercizi
+
+## Anomalie
+
+Dopo aver eliminato dai campioni `s1` e `s2` gli eventuali punti anomali mediante test di Grubb, verificare con un test di Student se i valori attesi dei due campioni siano uguali o meno.
+
+
+## Test di Student a un campione
+
+Considerare i seguenti dati:
+
+```{r message=FALSE}
+read_table(example_url("diet.dat"))
+```
+
+verificare l'ipotesi che i valori della colonna `cTime` quando `diet` è uguale a `D` provengano da una popolazione con media $\mu_0=59$
+
+## Test di Student accoppiato
+
+Considerare i seguenti dati: essi rappresentano delle misure di durezza effettuate con due diversi strumenti (indentatori `Tip1` e `Tip2`). Si ha il sospetto che uno dei due strumenti non sia correttamente calibrato e si vuole verificare l'ipotesi che le 10 misure ottenute col primo strumento abbiano lo stesso valore atteso di quelle ottenute col secondo. Inoltre, non disponendo di materiale su cui verificare la durezza sufficientemente grande per realizzare tutte e venti le impronte, si effettuano due a due le misure di durezza su piccoli campioni (`specimen`), considerati internamente omogenei ma non necessariamente tutti uguali:
+
+```{r message=FALSE}
+read_table(example_url("hardness2.dat"))
+```
+
+Che conclusioni possiamo trarre? rifiutiamo $H_0:~\mu_1=\mu_2$ se sì, con che probabilità d'errore? Cosa cambia con i differenti tipi di test di Student? Cosa possiamo dire sulla loro potenza?
+
