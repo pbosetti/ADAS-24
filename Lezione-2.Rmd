@@ -3,15 +3,15 @@ title: "Tidyverse"
 author: "Paolo Bosetti"
 date: "`r Sys.Date()`"
 output:
+  html_notebook:
+    toc: true
   pdf_document:
     toc: true
     number_sections: true
-  html_document:
-    toc: true
   word_document:
     toc: true
-  html_notebook:
-    top: true
+  html_document:
+    toc: true
 header-includes: \usepackage[italian]{babel}
 ---
 
@@ -728,9 +728,17 @@ which.max(abs(s1 - mean(s1)))
 
 # Esercizi
 
-## Anomalie
+## Anomalie -- 1
 
 Dopo aver eliminato dai campioni `s1` e `s2` gli eventuali punti anomali mediante test di Grubb, verificare con un test di Student se i valori attesi dei due campioni siano uguali o meno.
+
+
+## Anomalie -- 2
+
+Generare un campione di `r (N<-35)` dati normali con media `r (m<-38.7)` e deviazione standard `r (sd<-3.15)`. Modificare il quindicesimo punto assegnandogli il valore `r (v<-m+3.0*sd)`.
+
+Commentare il risultato applicando sia il test di Chauvenet, sia il test di Grubb.
+
 
 ## Test di Student a un campione
 
@@ -742,6 +750,7 @@ read_table(example_url("diet.dat"))
 
 verificare l'ipotesi che i valori della colonna `cTime` quando `diet` è uguale a `D` provengano da una popolazione con media $\mu_0=59$
 
+
 ## Test di Student accoppiato
 
 Considerare i seguenti dati: essi rappresentano delle misure di durezza effettuate con due diversi strumenti (indentatori `Tip1` e `Tip2`). Si ha il sospetto che uno dei due strumenti non sia correttamente calibrato e si vuole verificare l'ipotesi che le 10 misure ottenute col primo strumento abbiano lo stesso valore atteso di quelle ottenute col secondo. Inoltre, non disponendo di materiale su cui verificare la durezza sufficientemente grande per realizzare tutte e venti le impronte, si effettuano due a due le misure di durezza su piccoli campioni (`specimen`), considerati internamente omogenei ma non necessariamente tutti uguali:
@@ -750,7 +759,8 @@ Considerare i seguenti dati: essi rappresentano delle misure di durezza effettua
 read_table(example_url("hardness2.dat"))
 ```
 
-Che conclusioni possiamo trarre? rifiutiamo $H_0:~\mu_1=\mu_2$ se sì, con che probabilità d'errore? Cosa cambia con i differenti tipi di test di Student? Cosa possiamo dire sulla loro potenza?
+Che conclusioni possiamo trarre? rifiutiamo $H_0:~\mu_1=\mu_2$? se sì, con che probabilità d'errore? Cosa cambia con i differenti tipi di test di Student? Cosa possiamo dire sulla loro potenza?
+
 
 ## Box plot
 
@@ -763,9 +773,9 @@ options(knitr.kable.NA = "--")
 #Stampo la tabella in forma compatta ("wide")
 read_table(example_url("diet.dat")) %>% 
   group_by(diet) %>%                          # Raggruppo per dieta
-  mutate(individuo=1:n()) %>%                 # Aggiungo colonna con l'ID di individuo,
+  mutate(ripetizione=1:n()) %>%               # Aggiungo colonna con l'ID del singolo test,
                                               # gruppo per gruppo
-  select(cTime, diet, individuo) %>%          # Seleziono solo le colonne che servono
+  select(cTime, diet, ripetizione) %>%        # Seleziono solo le colonne che servono
   pivot_wider(                                # rendo la tabella "larga"
     names_from = diet,                        # - nomi delle colonne
     names_prefix = "dieta ",                  # - prefisso per i nomi
