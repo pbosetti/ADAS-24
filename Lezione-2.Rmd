@@ -35,8 +35,6 @@ header-includes: \usepackage[italian]{babel}
 source("my_lib.R")
 ```
 
-
-
 # Tidyverse
 
 `Tidyverse` è una meta-libreria, cioè una collezione di librerie, che trasforma il modo in cui si utilizza R per descrivere algoritmi di manipolazione e analisi dati.
@@ -47,15 +45,15 @@ library(tidyverse)
 
 Caricando la libreria si vede che in effetti si tratta di 9 librerie separate:
 
-1. `tibble`: data frame evoluti
-1. `readr`: lettura/scritura file
-1. `dplyr`: manipolazione dati
-1. `tidyr`: riorganizzazione di data frame 
-1. `ggplot2`: realizzazione grafici
-1. `purrr`: programmazione funzionale (mappe)
-1. `stringr`: manipolazione stringhe
-1. `forcats`: manipolazione fattori
-1. `lubridate`: manipolazione date e intervalli di tempo
+1.  `tibble`: data frame evoluti
+2.  `readr`: lettura/scritura file
+3.  `dplyr`: manipolazione dati
+4.  `tidyr`: riorganizzazione di data frame
+5.  `ggplot2`: realizzazione grafici
+6.  `purrr`: programmazione funzionale (mappe)
+7.  `stringr`: manipolazione stringhe
+8.  `forcats`: manipolazione fattori
+9.  `lubridate`: manipolazione date e intervalli di tempo
 
 Noi vedremo in particolare le prime 6. Ciascuna di queste librerie, se necessario, può essere caricata separatamente, oppure possiamo caricarle tutte come `tidyverse`.
 
@@ -89,14 +87,13 @@ rnorm(10, 2) %>%
   round(2)
 ```
 
-
 ## Tibble
 
 Le tibble sono versioni evolute dei data frame, compatibili con questi ultimi. Hanno alcuni vantaggi:
 
-1. sono più facili da creare
-2. sono più robuste
-3. sono più facili da visualizzare
+1.  sono più facili da creare
+2.  sono più robuste
+3.  sono più facili da visualizzare
 
 Nella creazione di un data frame non è possibile fare riferimento ad un'altra colonna, ma bisogna appoggiarsi a variabili intermedie:
 
@@ -165,15 +162,21 @@ tribble(
 
 Esistono le versioni *tidy* delle funzioni per leggere e scrivere file di testo:
 
-* `read_csv()`
-* `read_csv2()`
-* `read_table()`
-* `read_fwf()`
+-   `read_csv()`
 
-* `write_csv()`
-* `write_csv2()`
-* `write_table()`
-* `write_fwf()`
+-   `read_csv2()`
+
+-   `read_table()`
+
+-   `read_fwf()`
+
+-   `write_csv()`
+
+-   `write_csv2()`
+
+-   `write_table()`
+
+-   `write_fwf()`
 
 Il principale vantaggio di queste funzioni rispetto alle equivalenti con il punto nel nome (es. `read.table`) è che esse restituiscono direttamente una tibble.
 
@@ -184,6 +187,7 @@ Il sito <https://paolobosetti.quarto.pub>, nella sezione *Example data*, fornisc
 ```{r}
 read_table(example_url("cotton.dat"))
 ```
+
 A quanto pare, l'importazione non è andata a buon fine. Scarichiamo il file grezzo per capire come mai:
 
 ```{r}
@@ -198,8 +202,6 @@ Le prime 4 righe in effetti sono commenti che iniziano col carattere `#`, quindi
 data <- read_table(example_url("cotton.dat"), comment = "#")
 data
 ```
-
-
 
 ## Gestione delle tabella dati: dplyr
 
@@ -232,7 +234,6 @@ starwars %>%
 
 I criteri (che devono essere espressioni logiche, quindi non confindere "=" con "==") vengono passati separati da virgole e vengono applicati in sequenza. In questo esempio, cioè i personaggi vengono *prima* ordinati per statura e poi, a pari statura, per massa.
 
-
 ### Selezione di colonne
 
 Per selezionare solo alcune colonne si usa `select`:
@@ -247,11 +248,10 @@ starwars %>%
 
 Gli argomenti di `select` sono:
 
-* nomi di colonne
-* intervalli di colonne (`name:hair_color`)
-* espressioni logiche (`name:hair_color & !height`)
-* coppie `nuovo_nome = nome_precedente`
-
+-   nomi di colonne
+-   intervalli di colonne (`name:hair_color`)
+-   espressioni logiche (`name:hair_color & !height`)
+-   coppie `nuovo_nome = nome_precedente`
 
 ### Modificare una colonna
 
@@ -268,7 +268,6 @@ starwars %>%
 ```
 
 Si noti `relocate`, che consente di spostare una colonna prima o dopo un'altra colonna.
-
 
 ### Raggruppamento e sommario
 
@@ -296,7 +295,6 @@ Per inciso, si noti che la funzione `mean` specifica `na.rm=T`, cioè di ometter
 ```{r}
 mean(c(1, NA, 3), na.rm=T)
 ```
-
 
 ### Riorganizzazione
 
@@ -409,9 +407,8 @@ income %>%
   left_join(summarise(., total=sum(count), .by=religion)) %>% 
   mutate(perc = (count/total*100) %>% round(2))
 ```
+
 Notare che la pipe passa un oggetto come primo argomento alla funzione successiva, e se si vuole riutilizzare lo stesso argomento in altre posizioni basta usare la variabile speciale `.`, come sopra in `summarise(., ...`.
-
-
 
 # Grafici con `ggplot2`
 
@@ -447,8 +444,8 @@ tibble(
 
 Per aggiungere una seconda serie è necessario specificare una differente estetica in una differente geometria. La logica è:
 
-* le estetiche comuni alle varie serie (ad esempio l'ascissa) si mettono in `ggplot`
-* le estetiche proprie di ciascuna serie (le ordinate) si mettono nelle geometrie
+-   le estetiche comuni alle varie serie (ad esempio l'ascissa) si mettono in `ggplot`
+-   le estetiche proprie di ciascuna serie (le ordinate) si mettono nelle geometrie
 
 ```{r}
 df <- tibble(
@@ -482,10 +479,10 @@ df %>%
 
 Da notare:
 
-* estetiche come `color` (e `linewidth`, `linestyle`, `fill`, `shape`, ecc.) possono essere specificate 
-  - nella funzione `aes`, e fungono da aggregatori di serie
-  - come argomenti di `geom_`, e si applicano a tutti gli oggetti di quella geometria
-* la funzione `labs` consente di specificare le etichette per assi, grafico *e legenda*
+-   estetiche come `color` (e `linewidth`, `linestyle`, `fill`, `shape`, ecc.) possono essere specificate
+    -   nella funzione `aes`, e fungono da aggregatori di serie
+    -   come argomenti di `geom_`, e si applicano a tutti gli oggetti di quella geometria
+-   la funzione `labs` consente di specificare le etichette per assi, grafico *e legenda*
 
 Vogliamo ora realizzare qualche grafico per illustrare i dati di reddito nella tabella `income`. Anzitutto trasformiamo la colonna `income` da stringa in colonna numerica, che si servirà più avanti per poter riordinare i dati: Ci creiamo una tibble di supporto che definisce le corrispondenze numeriche per ogni intervallo di reddito:
 
@@ -511,6 +508,7 @@ income2 <- income %>%
 
 income2
 ```
+
 Si noti che la colonna `income` è stata ridefinita come `factor(income, ordered=T, levels=values$income)`: in questo modo gli intervalli di reddito vengono rappresentati come fattori (cioè variabili categoriche) ordinati (`ordered=T`) secondo la sequenza logica (come in `values$income`).
 
 Possiamo ora realizzare un grafico a barre sovrapposte, filtrando solo le righe per cui `income_n != 0`:
@@ -535,6 +533,7 @@ religion_ord <- income2 %>%
 
 religion_ord
 ```
+
 Ora trasformo `income2` modificando l'ordine intrinseco del fattore `religion` e rifaccio il grafico:
 
 ```{r}
@@ -556,7 +555,6 @@ income2 %>%
 ```
 
 Esercizio: usando un *left join* tradurre i nomi delle religioni nel grafico.
-
 
 # Statistica inferenziale
 
@@ -587,6 +585,7 @@ Per prima cosa è necessario effettuare un test della varianza:
 ```{r}
 (vt <- var.test(s1, s2))
 ```
+
 Il $p$-value pari a `r vt$p.value %>% round(3)` corrisponde ad una probabilità di errore troppo alta per poter scartare l'ipotesi nulla: di conseguenza, concludiamo che **i due campioni provengono da popolazioni con la medesima varianza**, cioè sono campioni omoschedastici.
 
 A questo punto posso procedere col test di Student, specificando opportunamente l'opzione `var.equal` (con una soglia del 5% sulla probabilità d'errore di tipo I):
@@ -599,24 +598,23 @@ Concludiamo che, con una probabilità d'errore pari a `r tt$p.value %>% round(3)
 
 Il T-test riporta le seguenti informazioni notevoli:
 
-* la statistica di test $t_0=`r tt$statistic`$
-* i gradi di libertà $n_1+n_2-2=`r sum(n)-2`$
-* il *p*-value `r tt$p.value`
-* i limiti dell'intervallo di confidenza
+-   la statistica di test $t_0=`r tt$statistic`$
+-   i gradi di libertà $n_1+n_2-2=`r sum(n)-2`$
+-   il *p*-value `r tt$p.value`
+-   i limiti dell'intervallo di confidenza
 
 La coppia di ipotesi effettivamente verificate è:
 
 \begin{align*}
 H_0 &: \mu_1-\mu_2 = \mu_0 \\
 H_1 &: \mu_1-\mu_2 \neq \mu_0
-\end{align*}
-dove $\mu_0$ è il parametro `mu=0` usato nella funzione `t.test()`.
+\end{align*} dove $\mu_0$ è il parametro `mu=0` usato nella funzione `t.test()`.
 
 Come detto sopra, solo un *p*-value piccolo (solitamente almeno minore di 0.05) ci consente di rigettare $H_0$.
 
-L'intervallo di confidenza **è calcolato relativamente a $\mu_0$**: se nella funzione `t.test` il valore del parametro `mu` (con default a `0`) risulta interno all'intervallo, allora si accetta $H_0$ con il livello di confidenza assegnato (`conf.level`, default a 0.95), e viceversa.
+L'intervallo di confidenza **è calcolato relativamente a** $\mu_0$: se nella funzione `t.test` il valore del parametro `mu` (con default a `0`) risulta interno all'intervallo, allora si accetta $H_0$ con il livello di confidenza assegnato (`conf.level`, default a 0.95), e viceversa.
 
-### T-tes a un lato
+### T-test a un lato
 
 Si noti che se per gli stessi campioni si valuta il corrispondente test a un lato, osservando che $\bar s_1 < \bar s_2$:
 
@@ -629,7 +627,6 @@ t.test(s1, s2,
 ```
 
 si ottiene un $p$-value minore, cioè si può scartare l'ipotesi nulla con più forza: quando cioè si può già escludere uno dei due lati, il test a un lato è **più potente** (nel senso che ha una maggior potenza).
-
 
 ## Box plot
 
@@ -655,7 +652,6 @@ df %>%
 ```
 
 Osserviamo che per entrambi i campioni il box-plot suggerisce che i punti massimi siano delle anomalie. Verifichiamo questa possibilità.
-
 
 ## Anomalie
 
@@ -690,7 +686,6 @@ cs2 <- chauvenet(s2)
 ```
 
 Si osserva che secondo questo criterio entrambi i massimi valori di `s1` e `s2` sono anomali. Decidiamo quindi di eliminarli dai rispettivi vettori, sostituendoli con `NA` (lavoriamo su una coppia dei vettori iniziali):
-
 
 ```{r}
 s1_2 <- s1
@@ -731,14 +726,11 @@ la quale conferma che il punto massimo di `s1` è un'anomalia. Dato che però il
 which.max(abs(s1 - mean(s1)))
 ```
 
-
-
 # Esercizi
 
 ## Anomalie
 
 Dopo aver eliminato dai campioni `s1` e `s2` gli eventuali punti anomali mediante test di Grubb, verificare con un test di Student se i valori attesi dei due campioni siano uguali o meno.
-
 
 ## Test di Student a un campione
 
@@ -760,3 +752,35 @@ read_table(example_url("hardness2.dat"))
 
 Che conclusioni possiamo trarre? rifiutiamo $H_0:~\mu_1=\mu_2$ se sì, con che probabilità d'errore? Cosa cambia con i differenti tipi di test di Student? Cosa possiamo dire sulla loro potenza?
 
+## Box plot
+
+Consideriamo i dati nel file esempio `diet.dat`:
+
+```{r message=FALSE}
+# Imposto kable in modo che stampi una lineetta al posto di NA
+options(knitr.kable.NA = "--")
+
+#Stampo la tabella in forma compatta ("wide")
+read_table(example_url("diet.dat")) %>% 
+  group_by(diet) %>%                          # Raggruppo per dieta
+  mutate(individuo=1:n()) %>%                 # Aggiungo colonna con l'ID di individuo,
+                                              # gruppo per gruppo
+  select(cTime, diet, individuo) %>%          # Seleziono solo le colonne che servono
+  pivot_wider(                                # rendo la tabella "larga"
+    names_from = diet,                        # - nomi delle colonne
+    names_prefix = "dieta ",                  # - prefisso per i nomi
+    values_from = cTime                       # - valori nelle celle
+  ) %>% 
+  knitr::kable(                               # formatto la tabella per output LaTeX
+    caption="Tempo di coagulazione (min)"     # - specifica legenda della tabella
+  )
+```
+
+Discutere quanto segue:
+
+1. realizzare un box-plot in cui le categorie siano rappresentate dalla colonna `diet` e la variabile in studio dalla colonna `cTime`.
+2. Studiando l'help in linea della funzione `geom_boxplot`, verificare l'uso dell'opzione `notch` e discutere il grafico risultante.
+
+**Nota**: Il blocco soprastante mostra come rendere in forma compatta e ben formattata una tabella sul report \LaTeX: compilare il documento per vedere il risultato. Provare a disattivare i vari passi per comprenderne lo scopo e l'effetto[^1].
+
+[^1]: Si noti la sintassi `knitr::kable()`, equivalente a caricare la libreria `library(knitr)` e poi usare la funzione `kable()`: quando si usa una sola funzione di una libreria, anziché caricarla completamente è possibile limitarsi a specificarne il nome prima della funzione, seguito da `::`.
