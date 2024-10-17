@@ -3,11 +3,11 @@ title: "Tidyverse"
 author: "Paolo Bosetti"
 date: "`r Sys.Date()`"
 output:
-  html_notebook:
-    toc: true
   pdf_document:
     toc: true
     number_sections: true
+  html_notebook:
+    toc: true
   word_document:
     toc: true
   html_document:
@@ -794,3 +794,348 @@ Discutere quanto segue:
 **Nota**: Il blocco soprastante mostra come rendere in forma compatta e ben formattata una tabella sul report \LaTeX: compilare il documento per vedere il risultato. Provare a disattivare i vari passi per comprenderne lo scopo e l'effetto[^1].
 
 [^1]: Si noti la sintassi `knitr::kable()`, equivalente a caricare la libreria `library(knitr)` e poi usare la funzione `kable()`: quando si usa una sola funzione di una libreria, anziché caricarla completamente è possibile limitarsi a specificarne il nome prima della funzione, seguito da `::`.
+
+
+# Verifica di normalità
+Il test di Student è basato sull'ipotesi che i due campioni siano **indipendenti**. Quest'ipotesi può essere verificata mediante la correlazione o i test di correlazione.
+
+Lo stesso test e molti altri test che abbiamo visto e vedremo sono basati sull'assunzione di normalità del campione o dei residui. Quest'ipotesi può essere verificata con un metodo grafico o con due test statistici.
+
+## Verifica correlazione
+
+Se due campioni non sono correlati, il grafico di uno contro l'altro mostra una nuvola senza tendenze particolari. Viceversa, se c'è correlazione la nuvola appare allungata:
+
+```{r}
+set.seed(0)
+N <- 50
+
+df <- tibble(
+  s1 = rnorm(N, 3, 1),
+  s2 = rnorm(N, 5, 1),
+  s3 = 2 + 1.5*s1 + rnorm(N, 0, 0.5)
+)
+
+df %>% 
+  ggplot(aes(x=s1)) +
+  geom_point(aes(y=s2), color="red") + 
+  geom_point(aes(y=s3), color="green")
+```
+
+Quantitativamente possiamo calcolare la covarianza e la correlazione:
+
+```{r}
+cov(df$s1, df$s2)
+cov(df$s1, df$s3)
+
+cor(df$s1, df$s2)
+cor(df$s1, df$s3)
+```
+
+La covarianza dà effettivamente poche informazioni, se non che `s1` e `s3` sono effettivamente più correlate di `s1` e `s2`. Più ulile è l'indice di correlazione, sempre compreso tra -1 e 1. Dato che `s1` e `s2` sono effettivamente non correlati, vediamo che anche in casi simili la correlazione non è mai esattamente 0.
+
+R dispone anche di un test di correlazione, con ipotesi nulla di non-correlazione:
+
+```{r}
+cor.test(df$s1, df$s2)
+cor.test(df$s1, df$s3)
+```
+
+I due $p$-value confermano effettivamente che solo `s1` e `s3` sono correlati.
+
+
+## Normalità
+
+Cominciamo con i metodi grafici: grafico quantile-quantile (*Q-Q plot*), come documentato su <https://paolobosetti.quarto.pub/slides/ADAS/1-statistica.html#/analisi-di-normalit%C3%A0-grafico-quantile-quantile>:
+
+```{r}
+set.seed(0)
+N <- 10
+df <- tibble(
+  i = 1:N,
+  x = rnorm(N, 10, 2) %>% sort(),
+  f = (i-3/8)/(N+1 -3/4),
+  q = qnorm(f)
+)
+
+# Salvo il graficio per poterlo poi riutilizzare:
+plt <- df %>% 
+  ggplot(aes(x=q, y=x)) +
+  geom_point() +
+  labs(x="quantili reali", y="quantili teorici")
+plt
+```
+
+La verifica va fatta confrontando la posizione dei punti rispetto alla retta di riferimento nominale, che può essere ottenuta come la retta passante per il primo e il terzo quartile:
+
+
+```{r}
+# quantili teorici normali:
+qx <- qnorm(c(1, 3)/4)
+# quantili del campione:
+qy <- quantile(df$x, c(1, 3)/4)
+# y = a*x + b
+a <- (qy[2] - qy[1])/(qx[2] - qx[1])
+b <- qy[1] - a * qx[1]
+plt +
+  geom_abline(slope = a, intercept = b) +
+  geom_point( # uso dati e estetica indipendenti
+    mapping=aes(x=x, y=y), 
+    data=tibble(x=qx, y=qy), 
+    color="red", size=3, shape=3)
+```
+
+La libreria `ggplot2` dispone di una funzione apposita per generare direttamente il Q-Q plot. Facciamolo a partire da una tabella *tidy* usando l'estetica `color` per raggruppare due campioni diversi nello stesso grafico:
+
+```{r}
+set.seed(123)
+N <- 200
+df <- tibble(
+  sn = rnorm(N, 10, 2),
+  su = runif(N, 8, 12)
+) %>% 
+  pivot_longer(sn:su, names_to="sample", values_to="value")
+
+df %>% 
+  ggplot(aes(sample=value, color=sample)) +
+  geom_qq() +
+  geom_qq_line() +
+  labs(x="Quantili teorici", y="Quantili campionari")
+```
+
+Osserviamo come anche per un campione effettivamente normale (come `sn`) il grafico Q-Q mostra comunemente delle deviazioni per quantili teorici esterni all'intervallo $[-1,1]$.
+
+Il grafico Q-Q può essere anche utile a individuare rapidamente delle anomalie, che spiccano subito come molto lontane dalla diagonale:
+
+```{r}
+df$value[33] <- 50
+
+df %>% 
+  ggplot(aes(sample=value, color=sample)) +
+  geom_qq() +
+  geom_qq_line()
+```
+
+
+
+## Test di Shapiro-Wilk
+
+Il test di normalità più potente è quello di Shapiro-Wilk. È sempre opportuno accompagnarlo con un'analisi grafica dei dati (es. Q-Q plot), dato che potrebbe indicare una non-normalità anche solo a causa di una o poche anomalie:
+
+```{r}
+shapiro.test(df[df$sample == "sn",]$value)
+shapiro.test(df[df$sample == "su",]$value)
+```
+
+## Test del Chi-quadro
+
+Costruiamo il test secondo [la teoria](https://paolobosetti.quarto.pub/slides/ADAS/1-statistica.html#/analisi-di-normalit%C3%A0-test-del-chi-quadro). Nota l'uso delle funzioni `qnorm()`, `cut()` e `tabulate()`:
+
+```{r}
+set.seed(0)
+
+N <- 100
+sample <- runif(N, 8, 12)
+
+k <- floor(N/5)
+m <- mean(sample)
+s <- sd(sample)
+
+b <- qnorm(seq(0, 1, length.out=k+1), m, s)
+O <- sample %>% cut(breaks=b) %>% tabulate()
+E <- N/k
+
+X0 <- sum((O-E)^2/E)
+X0
+pchisq(X0, k-2-1, lower.tail = F)
+```
+
+R dispone di una funzione `chisq.test()`, ma non è adatta al test di normalità, infatti fornisce un risultato differente:
+
+```{r}
+chisq.test(sample)
+```
+
+Come si vede il risultato è completamente diverso. La funzione `chisq.test()`, infatti, serve in realtà ad un altro scopo, cioè l'analisi di **correlazione in tabelle di contingenza**.
+
+Supponiamo di avere i dati che riportano quanti pezzi di una linea sono lavorati da uno di due operatori su ciascuna di tre macchine:
+
+```{r}
+set.seed(0)
+df <- tibble(
+  operatore = sample(2, 500, replace=T, prob=c(2,1)),
+  macchina = sample(3, 500, replace=T, prob=c(3, 2.5, 1))
+) %>% 
+  mutate(operatore=factor(operatore), macchina=factor(macchina))
+```
+
+La tabella di contingenza mostra l'incidenza delle osservazione sulle due variabili categoriche:
+
+```{r}
+df %>% table()
+```
+
+
+Il test del Chi-quadro verifica l'ipotesi nulla che le due variabili categoriche siano indipendenti:
+
+```{r}
+chisq.test(table(df))
+```
+Verifichiamo l'opposto con una altra tabella di contingenza creata ad arte:
+
+```{r}
+m <- matrix(c(160, 140, 40, 40, 60, 60), nrow=2, byrow=T)
+dimnames(m) <- list(operatore=1:2, macchina=1:3)
+m
+```
+
+```{r}
+chisq.test(m)
+```
+
+
+# Analisi della Varianza (ANOVA)
+
+Consideriamo le prove a trazione su filati con diversi percentuali di cotone:
+
+```{r}
+df <- read.table(example_url("cotton.dat"), header=T, comment.char="#", sep="\t") %>% 
+  tibble() %>% 
+  mutate(
+    Cotton = factor(Cotton)
+  )
+
+df %>% 
+  ggplot(aes(x=Cotton, y=Strength)) +
+  geom_boxplot()
+```
+L'analisi della varianza parte dalla definizione di un **modello lineare** che correla la resa (output) con il fattore in ingresso (input) mediante una **formula R**:
+
+```{r}
+df.lm <- lm(Strength ~ Cotton, data=df)
+anova(df.lm)
+```
+
+La formula `Strength~Cotton` corrisponde al **modello statistico lineare** $y_{ij} = \mu_i + \varepsilon_{ij}$. Dato un modello, la formula si ottiene eliminando i residui $\varepsilon_{ij}$ e sostituendo $=$ con `~`.
+
+La tabella ANOVA conferma che **almeno uno dei trattamenti ha un effetto statisticamente significativo**.
+
+Prima di accettare questa conclusione è però indispensabile effettuare l'analisi dei residui, verificando che siano normali:
+
+```{r}
+shapiro.test(df.lm$residuals)
+```
+
+Lasciamo **per esercizio** la verifica con Q-Q plot.
+
+Le vecchie versioni di R utilizzavano una differente interfaccia per il calcolo della tabella ANOVA:
+
+```{r}
+aov(Strength~Cotton, data=df) %>% summary()
+# oppure:
+# summary(aov(Strength~Cotton, data=df))
+```
+
+
+## Test di Tukey
+
+La funzione `aov()` è in realtà anche utile per realizzare il test di Tukey:
+
+```{r}
+df.tuk <- TukeyHSD(aov(Strength~Cotton, data=df), conf.level = 0.99)
+df.tuk
+```
+
+È possibile ottenere un grafico direttamente con la funzione base `plot()`, ma non è molto leggibile:
+
+```{r}
+plot(df.tuk)
+```
+
+Per ottenere lo stesso grafico con `ggplot`:
+
+```{r}
+df.tuk$Cotton %>% 
+  fortify() %>% # Per convertire in tibble
+  rownames_to_column("id") %>% 
+  ggplot(aes(x=id)) +
+  geom_point(aes(y=diff)) +
+  geom_hline(yintercept = 0, color="red") +
+  geom_errorbar(aes(ymin=lwr, ymax=upr)) +
+  coord_flip()
+```
+**Esercizio**: provare a cambiare il valore del livello di confidenza e discutere le variazioni conseguenti sul grafico.
+
+
+## ANOVA a due vie
+
+Consideriamo un esperimento che misura la vita di una batteria al variare della temperatura di esercizio e del tipo di elettrolita utilizzato all'interno della batteria stessa:
+
+```{r}
+df <- read.table(example_url("battery.dat"), comment="#", header=T) %>% 
+  mutate(
+    Temperature = factor(Temperature),
+    Material = factor(LETTERS[Material])
+  )
+df
+```
+
+Il modello lineare deve essere costruito prendendo in considerazione i due fattori **e anche la loro interazione**. Si noti l'algebra delle formule R:
+
+```{r}
+df.lm <- lm(Response ~ Material * Temperature, data=df)
+# equivale a:
+df.lm <- lm(Response ~ Material + Temperature + Material:Temperature, data=df)
+```
+
+La formula `Response ~ Temperature * Material` corrisponde al modello analitico:
+$$
+y_{ijk} = \mu + \alpha_i + \beta_j + (\alpha\beta)_{ij} + \varepsilon_{ijk} = \hat y_{ij} + \varepsilon_{ijk}
+$$
+
+Otteniamo l'analisi della varianza per il modello `df.lm`:
+
+```{r}
+anova(df.lm)
+```
+
+Da cui risultano essere significativi sia gli effetti dei fattori che la loro interazione.
+
+Osserviamo i dati:
+
+```{r}
+df %>%
+  # mutate(Temperature = as.numeric(Temperature)) %>% 
+  group_by(Temperature, Material) %>% 
+  summarise(Resp=mean(Response), min=min(Response), max=max(Response)) %>% 
+  ggplot(aes(x=Temperature, y=Resp, color=Material, group=Material)) +
+  geom_point() +
+  geom_line() +
+  geom_errorbar(aes(ymin=min, ymax=max), width=0.1, position = position_jitter(width=0.1))
+```
+
+Si noti l'uso di `position=position_jitter()`, che aggiunge un piccolo offset casuale alla posizione orizzontale delle barre d'errore, in modo che non essendo sovrapposte risultino più leggibili.
+
+**Esercizio**: Usare un test di Tukey (in realtà tre) per verificare quali valori di risposta sono statisticamente significativi ai diversi livelli di temperatura
+
+```{r}
+res <- map(levels(df$Temperature),
+  ~ TukeyHSD(aov(Response~Material, data=filter(df, Temperature==.)))
+)
+```
+
+```{r}
+1:3 %>% walk(
+  ~ print(res[[.]]$Material %>% 
+    fortify() %>% 
+    rownames_to_column("id") %>% 
+    ggplot(aes(x=id)) +
+    geom_point(aes(y=diff)) +
+    geom_hline(yintercept = 0, color="red") +
+    geom_errorbar(aes(ymin=lwr, ymax=upr)) +
+    coord_flip() +
+    labs(
+      title=glue("T = {levels(df$Temperature)[.]}°"),
+      x="Difference", y="Pair"))
+)
+```
+
