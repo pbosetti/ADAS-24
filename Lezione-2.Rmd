@@ -745,7 +745,7 @@ Commentare il risultato applicando sia il test di Chauvenet, sia il test di Grub
 Considerare i seguenti dati:
 
 ```{r message=FALSE}
-read_table(example_url("diet.dat"))
+read_table(example_url("diet.dat")) %>% head(n=10)
 ```
 
 verificare l'ipotesi che i valori della colonna `cTime` quando `diet` è uguale a `D` provengano da una popolazione con media $\mu_0=59$
