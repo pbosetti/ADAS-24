@@ -3,11 +3,11 @@ title: "Tidyverse"
 author: "Paolo Bosetti"
 date: "`r Sys.Date()`"
 output:
+  html_notebook:
+    toc: true
   pdf_document:
     toc: true
     number_sections: true
-  html_notebook:
-    toc: true
   word_document:
     toc: true
   html_document:
@@ -33,6 +33,12 @@ header-includes: \usepackage[italian]{babel}
 
 # Eseguo lo script con le mie funzioni personalizzate:
 source("my_lib.R")
+
+knitr::opts_chunk$set(
+  fig.dim=c(5,3),
+  out.width = "10cm",
+  fig.align = "center"
+) 
 ```
 
 # Tidyverse
@@ -1008,6 +1014,7 @@ df %>%
   ggplot(aes(x=Cotton, y=Strength)) +
   geom_boxplot()
 ```
+
 L'analisi della varianza parte dalla definizione di un **modello lineare** che correla la resa (output) con il fattore in ingresso (input) mediante una **formula R**:
 
 ```{r}
@@ -1063,6 +1070,7 @@ df.tuk$Cotton %>%
   geom_errorbar(aes(ymin=lwr, ymax=upr)) +
   coord_flip()
 ```
+
 **Esercizio**: provare a cambiare il valore del livello di confidenza e discutere le variazioni conseguenti sul grafico.
 
 
@@ -1110,32 +1118,84 @@ df %>%
   ggplot(aes(x=Temperature, y=Resp, color=Material, group=Material)) +
   geom_point() +
   geom_line() +
-  geom_errorbar(aes(ymin=min, ymax=max), width=0.1, position = position_jitter(width=0.1))
+  geom_errorbar(aes(ymin=min, ymax=max), width=0.1, position = position_dodge(width=0.1))
 ```
 
-Si noti l'uso di `position=position_jitter()`, che aggiunge un piccolo offset casuale alla posizione orizzontale delle barre d'errore, in modo che non essendo sovrapposte risultino più leggibili.
+Si noti l'uso di `position=position_dodge()`, che aggiunge un piccolo offset alla posizione orizzontale delle barre d'errore, in modo che non essendo sovrapposte risultino più leggibili.
 
-**Esercizio**: Usare un test di Tukey (in realtà tre) per verificare quali valori di risposta sono statisticamente significativi ai diversi livelli di temperatura
+**Esercizio**: Usare un test di Tukey (in realtà tre) per verificare quali valori di risposta sono statisticamente significativi **al 99%** ai diversi livelli di temperatura
+
+Questo esercizio potete risolverlo usando un ciclo `for`. Di seguito mostro però come può essere risolto con un uso evoluto di `dplyr`, `purrr` e `ggplot`.
+
+Comincio costruendomi una lista di oggetti `TukeyHSD`, usando i livelli del fattore `Temperature` come nomi degli elementi in lista:
 
 ```{r}
 res <- map(levels(df$Temperature),
-  ~ TukeyHSD(aov(Response~Material, data=filter(df, Temperature==.)))
+  ~ TukeyHSD(aov(Response~Material, data=filter(df, Temperature==.)), conf.level = 0.99)
 )
+names(res) <- levels(df$Temperature)
 ```
+
+Ora `res` è una lista con tre elementi: `res[["15"]]`, `res[["70"]]` e `res[["125"]]`. Ciascun elemento è a sua volta una lista con un elemento, il quale contiene una matrice coi dati che ci interessano. Ad esempio:
 
 ```{r}
-1:3 %>% walk(
-  ~ print(res[[.]]$Material %>% 
-    fortify() %>% 
-    rownames_to_column("id") %>% 
-    ggplot(aes(x=id)) +
-    geom_point(aes(y=diff)) +
-    geom_hline(yintercept = 0, color="red") +
-    geom_errorbar(aes(ymin=lwr, ymax=upr)) +
-    coord_flip() +
-    labs(
-      title=glue("T = {levels(df$Temperature)[.]}°"),
-      x="Difference", y="Pair"))
-)
+res[["15"]][[1]]
 ```
 
+Voglio crearmi un'unica tibble che contenga tutte le tre matrici, con in più una colonna che rappresenti le temperature. Per farlo uso la funzione `purrr::reduce()`, che è analoga alla funzione `map()`, ma **accumula** gli elementi della lista su cui opera dentro un contenitore specificato dal parametro `.init`, che inizialmente impostiamo come una tibble vuota:
+
+```{r}
+names(res) %>% 
+  reduce(                          # vuole una funzione a due valori
+    function(tbl, key) {           # key di volta in volta è un livello di T
+      bind_rows(tbl,               # tbl è l'accumulatore
+        res[[key]][[1]] %>%        # estraggo il test per valore corrente di T
+          fortify() %>%            # da aray in tibble
+          rownames_to_column("id") %>% 
+          add_column(T=key, .before="id") # aggiungo colonna con T (valori ripetuti)
+      )
+    }, 
+    .init=tibble()                 # Valore iniziale dell'accumulatore
+  ) %>% 
+  relocate(T, .before=id)          # Sposto T all'inizio
+```
+
+**Nota**: per capire meglio come opera `reduce()` usiamo un esempio più semplice, accodando elementi di un vettore in una lista:
+
+```{r}
+LETTERS[1:3] %>% 
+  reduce(
+    function(lst, elem) {
+      lst %>% append(elem)
+    },
+  .init=list()
+  )
+```
+Come in tutte le funzioni di `purrr` posso sostutuire una funzione a due valori `function(a, b)` con `~` e usare `.x` come primo valore e `.y` come secondo, nel corpo della funzione:
+
+```{r}
+LETTERS[1:3] %>% 
+  reduce(~ append(.x, .y), .init=list())
+```
+
+Ora posso realizzare il grafico:
+
+```{r}
+names(res) %>% 
+  reduce(.init=tibble(), ~ {
+    bind_rows(.x,
+      res[[.y]][[1]] %>%
+        fortify() %>%
+        rownames_to_column("id") %>% 
+        add_column(T=.y, .before="id")
+    )}
+  ) %>% 
+  ggplot(aes(x=id, y=diff, group=T, color=T)) +
+    geom_point(position=position_dodge(width=0.1)) +
+    geom_hline(yintercept = 0, color="red") +
+    geom_errorbar(aes(ymin=lwr, ymax=upr), width=0.2, position=position_dodge(width=0.1)) +
+    coord_flip() +
+  labs(y="Differenza di durata", x="Coppia di materiali", color="Temp.")
+```
+
+Dal grafico osserviamo che gli unici due casi in cui il materiale dielettrico comporta effettivamente una differenza significativa sul tempo di scarica delle batterie sono le differenze `B-A`e `C-A` a 70°C.
