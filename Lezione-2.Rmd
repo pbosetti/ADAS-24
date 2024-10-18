@@ -35,8 +35,8 @@ header-includes: \usepackage[italian]{babel}
 source("my_lib.R")
 
 knitr::opts_chunk$set(
-  fig.dim=c(5,3),
-  out.width = "10cm",
+  fig.dim=c(5,3),      # dimensioni delle figure in pollici
+  out.width = "10cm",  # larghezza figure sul documento
   fig.align = "center"
 ) 
 ```
@@ -1157,7 +1157,7 @@ names(res) %>%
     }, 
     .init=tibble()                 # Valore iniziale dell'accumulatore
   ) %>% 
-  relocate(T, .before=id)          # Sposto T all'inizio
+  mutate(Significant=`p adj` < 0.01)
 ```
 
 **Nota**: per capire meglio come opera `reduce()` usiamo un esempio più semplice, accodando elementi di un vettore in una lista:
@@ -1189,11 +1189,14 @@ names(res) %>%
         rownames_to_column("id") %>% 
         add_column(T=.y, .before="id")
     )}
-  ) %>% 
+  ) %>%
+  mutate(Significant=`p adj` < 0.01) %>% 
   ggplot(aes(x=id, y=diff, group=T, color=T)) +
     geom_point(position=position_dodge(width=0.1)) +
     geom_hline(yintercept = 0, color="red") +
-    geom_errorbar(aes(ymin=lwr, ymax=upr), width=0.2, position=position_dodge(width=0.1)) +
+    geom_errorbar(aes(ymin=lwr, ymax=upr, linetype = !Significant), 
+                  width=0.2, 
+                  position=position_dodge(width=0.1)) +
     coord_flip() +
   labs(y="Differenza di durata", x="Coppia di materiali", color="Temp.")
 ```
