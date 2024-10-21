@@ -1194,9 +1194,10 @@ names(res) %>%
   ggplot(aes(x=id, y=diff, group=T, color=T)) +
     geom_point(position=position_dodge(width=0.1)) +
     geom_hline(yintercept = 0, color="red") +
-    geom_errorbar(aes(ymin=lwr, ymax=upr, linetype = !Significant), 
+    geom_errorbar(aes(ymin=lwr, ymax=upr, linetype = Significant), 
                   width=0.2, 
                   position=position_dodge(width=0.1)) +
+    scale_linetype_manual(values = c(2, 1))+
     coord_flip() +
   labs(y="Differenza di durata", x="Coppia di materiali", color="Temp.")
 ```
