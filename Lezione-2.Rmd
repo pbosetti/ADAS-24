@@ -32,6 +32,7 @@ header-includes: \usepackage[italian]{babel}
 # sull'ingranaggio, modificate le impostazioni e aggiungete il nome setup.
 
 # Eseguo lo script con le mie funzioni personalizzate:
+library(modelr)
 source("my_lib.R")
 
 knitr::opts_chunk$set(
@@ -1203,3 +1204,73 @@ names(res) %>%
 ```
 
 Dal grafico osserviamo che gli unici due casi in cui il materiale dielettrico comporta effettivamente una differenza significativa sul tempo di scarica delle batterie sono le differenze `B-A`e `C-A` a 70°C.
+
+Si noti che è anche possibile osservare i dati grezzi con un box-plot a due variabili:
+
+```{r}
+df %>% 
+  ggplot(aes(x=Temperature, y=Response, color=Material)) +
+  geom_boxplot()
+```
+### Analisi dei residui
+
+L'ultimo passo è rappresentato dall'analisi dei residui. Dato un modello lineare come `df.lm`, i residui si travano nel campo `df.lm$residuals`, oppure si possono ottenere con la funzione:
+
+```{r}
+residuals(df.lm)
+```
+
+Come si vede è un vettore con tanti elementi quanti il set di dati iniziali; ciascun elemento rapresenta la differenza tra osservazione e modello: $\varepsilon_{ijk} = y_{ijk} - \hat y_{ij}$
+
+Per prima cosa verifichiamo la normalità con un test di Shapiro:
+
+```{r}
+df.lm$residuals %>% shapiro.test()
+```
+
+Il *p-value* elevato significa che possiamo accettare l'ipotesi nulla (normalità). Ricordiamo che il test di Shapiro è molto potente e, nel caso in cui il *p-value* fosse piccolo sarebbe comunque opportuno verificare con un grafico Q-Q. Non è il nostro caso, ma facciamolo comunque.
+
+Per prima cosa aggiungiamo le predizioni e i residui al data frame originario dal modello `df.lm`, in modo da avere una tibble facile da trattare con `ggplot`. La libreria `modelr` (da installare) fornisce due utili funzioni che aggiungono al data frame la colonna coi residui $\varepsilon$ e quella con i valori predetti $\hat y$:
+
+```{r}
+df <- df %>% 
+  add_residuals(df.lm) %>% 
+  add_predictions(df.lm)
+```
+
+Mettiamo in grafico Q-Q i residui:
+
+```{r}
+df %>% 
+  ggplot(aes(sample=resid)) +
+  geom_qq() +
+  geom_qq_line(color="red") +
+  labs(x="Quantili teorici", y="Quantili campionari")
+```
+
+Dobbiamo infine verificare l'assenza di **pattern**, per escludere che effetti **ignoti e incontrollabili** modifichino la resa del l'esperimento col passare del tempo o per le diverse condizioni operative:
+
+```{r}
+df %>% 
+  ggplot(aes(x=Temperature, y=resid, color=Material)) +
+  geom_point()
+```
+
+```{r}
+df %>% 
+  ggplot(aes(x=Material, y=resid, color=Temperature)) +
+  geom_point()
+```
+Quando le differenze sono inferiori a circa due volte l'estensione dei vari gruppi di punti (come in questo caso), significa che l'esperimento non presenta problemi.
+
+Il data frame originario contiene anche la colonna `RunOrder`, che rappresenta l'ordine **casuale** in cui sono state effettuate le singole prove. Essendo l'ordine appunto casuale, è evidente che eventuali disturbi tempo-dipendenti si distribuiscono casualmente sulle varie condizioni di prova, aumentando la varianza ma in maniera non specifica. Ciò diminuisce la potenza del test (cioè ho bisogno di differenze più evidenti per rifiutare l'ipotesi nulla), ma non aumenta la possibilità di falsi positivi.
+
+Un grafico dei residui contro l'ordine di esecuzione mi consente di evidenziare l'eventuale comparsa di effetti ignoti e non controllati, che se ci fossero tenderebbero ad aumentare o diminuire la variabilità dei residui in funzione del tempo:
+
+```{r}
+df %>% 
+  ggplot(aes(x=RunOrder, y=resid)) +
+  geom_point()
+```
+
+Anche in questo caso, il grafico non manifesta problemi, quindi **possiamo accettare l'analisi ANOVA sopra effettuata**.
