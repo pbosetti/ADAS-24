@@ -1,0 +1,293 @@
+---
+title: "Lezione 3: Regressione"
+author: "Paolo Bosetti"
+date: "`r Sys.Date()`"
+output:
+  pdf_document:
+    toc: true
+    number_sections: true
+  html_notebook:
+    toc: true
+  word_document:
+    toc: true
+  html_document:
+    toc: true
+header-includes: \usepackage[italian]{babel}
+---
+
+```{r setup, message=FALSE, warning=FALSE, include=FALSE}
+library(tidyverse)
+library(modelr)
+source("my_lib.R")
+
+knitr::opts_chunk$set(
+  fig.dim=c(5,3),      # dimensioni delle figure in pollici
+  out.width = "10cm",  # larghezza figure sul documento
+  fig.align = "center"
+) 
+```
+
+# Regressione lineare
+
+## Modello lineare univariato
+
+Cominciamo con il caso più semplice: la regressione di un modello *univariato*, cioè che dipende da un'unica variabile aleatoria $x$. Ci generiamo i dati corrispondenti alla funzione polinomiale di secondo grado
+
+$$
+y_i = bx_i + cx_i^2 + \varepsilon_i
+$$
+
+dove $\varepsilon_i \sim \mathcal N(0, \sigma^2)$. Creiamo un data frame per 100 osservazioni:
+
+```{r}
+set.seed(0)
+N <- 100
+
+df <- tibble(
+  x = seq(-10, 10, length.out = N),
+  y_nom = 2 * x + 0.1 * x^2,
+  y = y_nom + rnorm(N, 0, 2)
+)
+
+df %>% 
+  ggplot(aes(x=x, y=y)) +
+  geom_point() +
+  geom_line(aes(y=y_nom), color="red")
+```
+
+> Nel grafico, la curva rossa rappresenta il modello nominale $y=bx + cx^2$.
+
+Nella realtà, il modello nominale sarebbe incognito, e potremmo solo osservare che i dati manifestano una certa curvatura, compatibile con un comportamento parabolico. Regrediamo il modello lineare di secondo grado:
+
+$$
+y_i = a + b x_i + cx_i^2 + \varepsilon_i
+$$ In R, tale modello si traduce nella formula `y~x + I(x^2)`.
+
+> **ATTENZIONE** --- le *formule* si ottengono dai modelli eliminando i residui, il termine costante, e i coefficienti dei fattori. Tuttavia, la formula `y~x+x^2` sarebbe scorretta, infatti secondo l'algebra delle formule si espanderebe come `y~x+(x*x)`, cioè `y~x+(x+x+x:x)`, ma l'interazione `x:x` è ovviamente inefficace, e `x+x+x` corrisponde a `x` (perché sul modello risulterebbe $y_i=3bx_i$, in cui il coefficiente da individuare è comunque solo $c$). 
+> Quindi, scrivere `y~x+x^2`sarebbe come scrivere `y~x`, cioè un modello di primo grado. Per evitare questo limite, R dispone della *funzione identità*, `I()`, che protegge il suo argomento e ne forza un'interpretazione letterale.
+
+```{r}
+(df.lm <- lm(y~x+I(x^2), data=df))
+```
+
+I tre termini `Coefficients` sono ovviamente i coefficienti $a$, $b$, e $c$. Si noti che i termini di primo e secondo grado sono molto vicini a quelli nominali (rispettivamente 2 e 0.1), ma compare anche un termine di grado 0.
+
+La funzione `summary()` può aiutarci a migliorare la regressione:
+
+```{r}
+summary(df.lm)
+```
+
+Osserviamo che il *p-value* associato all'intercetta è elevato: ciò significa che quel termine contribuisce poco al modello e può quindi essere rimosso. Notiamo inoltre il valore di $R^2$: `r summary(df.lm)$r.squared`.
+
+Rivediamo il modello rimuovendo l'intercetta (cioè forzando $a=0$). Nel linguaggio delle formule, ciò si ottiene **sottraendo 1**:
+
+```{r}
+df.lm <- lm(y~x + I(x^2) - 1, data = df)
+summary(df.lm)
+```
+
+Ora non solo tutti i termini risultano significativi, ma $R^2$ è anche aumentato (vale `r summary(df.lm)$r.squared`).
+
+Confrontiamo ora in grafico la regressione col modello nominale:
+
+```{r}
+df %>% 
+  add_residuals(df.lm) %>% 
+  add_predictions(df.lm) %>% 
+  ggplot(aes(x=x, y=y)) +
+  geom_point() +
+  geom_line(aes(y=y_nom), color="red") +
+  geom_line(aes(y=pred), color="darkgreen")
+```
+
+Se tutto ciò che interessa è il grafico, è possibile usare la geometria `geom_smooth()` per aggiungere direttamente a un grafico a dispersione la curva di regressione e la **banda di confidenza**. 
+
+```{r}
+df %>% 
+  ggplot(aes(x=x, y=y)) +
+  geom_smooth(
+    method="lm",                  # tipo di modello: lm()
+    formula = df.lm$call$formula, # riuso la formula di df.lm
+    level = 0.99                  # livello di confidenza (default 0.95)
+  ) +
+  geom_point()
+```
+
+Questo è un metodo rapido ma ha lo svantaggio di non fornire né i valori dei coefficienti, né i residui. Questi ultimi invece mi servono perché devo sempre ricordarmi di verificarne la normalità e l'assenza di *pattern*:
+
+```{r}
+shapiro.test(df.lm$residuals)
+
+df %>% 
+  add_residuals(df.lm) %>% 
+  ggplot(aes(sample=resid)) +
+  geom_qq() +
+  geom_qq_line()
+
+df %>% 
+  add_residuals(df.lm) %>% 
+  ggplot(aes(x=x, y=resid)) +
+  geom_point()
+```
+
+Osservo che i residui appaiono normali e privi di pattern, quindi posso accettare la regressione in `df.lm`.
+
+
+## Estrapolazione
+
+Estrapolare un modello regredito significa valutarlo all'esterno dell'intervallo di predittori sui quali è stato adattato.
+Facciamo un esempio: dai nostri dati iniziali selezioniamo solo quelli nell'intervallo $(-7.5, 7.5)$, adattiamo il modello su questi dati e lo confrontiamo con cosa succede all'esterno di tale intervallo:
+
+```{r}
+df <- df %>% 
+  mutate(
+    subset = ifelse(x> -7.5 & x < 7.5, "in", "out")
+  )
+
+df %>% 
+  ggplot(aes(x=x, y=y, color=subset)) + 
+  geom_point() +
+  geom_smooth(
+    data = filter(df, subset == "in"),
+    method = "lm",
+    formula = y~x+I(x^2),
+    fullrange = TRUE
+  ) +
+  coord_cartesian(ylim=c(-30, 30))
+```
+
+Osserviamo anzitutto che le bande di confidenza si allargano sensibilmente all'esterno dell'intervallo. Questo effetto è molto più evidente se il modello soffre di *sovra-adattamento*: 
+
+```{r}
+df <- df %>% 
+  mutate(
+    subset = ifelse(x> -7.5 & x < 7.5, "in", "out")
+  )
+
+df %>% 
+  ggplot(aes(x=x, y=y, color=subset)) + 
+  geom_point() +
+  geom_smooth(
+    data = filter(df, subset == "in"),
+    method = "lm",
+    formula = y~poly(x, 10, raw=T),
+    fullrange = TRUE
+  ) +
+  coord_cartesian(ylim=c(-30, 30))
+```
+
+Abbiamo usato la formula `y~poly(x, 10, raw=T)`, che indica un polinomio di grado 10. È evidente che in estrapolazione il modello non rappresenta correttamente i dati e che sull'intervallo di regressione cerca di inseguire i dati **perdendo di generalità**.
+
+
+## Bande di confidenza e di predizione
+
+La funzione `predict()` consente di ottenere un data frame con le bande di confidenza o di predizione:
+
+```{r}
+predict(df.lm, interval = "confidence") %>% head()
+```
+
+Questo data frame può essere affiancato a quello originario consentendomi di mettere in grafico le bande (con `geom_ribbon()`):
+
+```{r}
+df %>% 
+  bind_cols(predict(df.lm, interval="confidence", level=0.999)) %>% 
+  ggplot(aes(x=x, y=fit)) + 
+  geom_line() +
+  geom_ribbon(aes(ymin=lwr, ymax=upr), alpha=0.5) +
+  geom_point(aes(y=y))
+```
+
+Provare a sostituire `confidence` con `prediction` e discutere la differenza.
+
+
+# Cross-validazione
+
+La scelta del modello da regredire deve essere **validata**, cioè bisogna verificare che non soffra di sotto-adattamento né di sovra-adattamento. 
+
+Carichiamo un set di dati di esempio:
+
+```{r message=FALSE, warning=FALSE}
+df <- read_csv(example_url("kfold.csv"))
+df %>% 
+  ggplot(aes(x=x, y=y)) +
+  geom_point()
+```
+
+Proviamo con un modello di primo grado e valutiamo i residui:
+
+```{r}
+df.lm <- lm(y~x, data=df)
+
+df %>% 
+  add_residuals(df.lm) %>% 
+  ggplot(aes(x=x, y=resid)) + geom_point()
+
+```
+
+L'andamento sinuoso significa che il modello non è sufficientemente complesso e che dobbiamo aumentarne il grado. Ma di quanto? Per capirlo utilizziamo la **validazione incrociata** (*cross-validation*), cioè dividiamo i dati in due sottoinsiemi: uno, più grande, usato per la regressione; uno, più piccolo, per la validazione, cioè per la verifica del modello.
+
+```{r message=FALSE, warning=FALSE}
+set.seed(1)
+df <- df %>% 
+  mutate(train = runif(n()) > 1/4)
+
+df %>% 
+  ggplot(aes(x=x, y=y, color=train)) +
+  geom_point()
+```
+
+Costruisco una serie di modelli polinomiali dal grado 1 fino al grado 8 applicato **solo sui punti di addestramento** (`train`) e li metto in una lista:
+
+```{r}
+models <- df %>% 
+  filter(train) %>% {
+    list(
+      lm(y~x, data=.),
+      lm(y~poly(x, 2, raw=T), data=.),
+      lm(y~poly(x, 3, raw=T), data=.),
+      lm(y~poly(x, 4, raw=T), data=.),
+      lm(y~poly(x, 5, raw=T), data=.),
+      lm(y~poly(x, 6, raw=T), data=.),
+      lm(y~poly(x, 7, raw=T), data=.),
+      lm(y~poly(x, 8, raw=T), data=.)
+    )
+  }
+```
+
+Mi costruisco una tibble con i valori di $R^2$ per ogni modello e li confronto su un grafico a barre:
+
+```{r}
+tibble(
+  n = 1:length(models),
+  train = models %>% map_dbl(~ rsquare(., filter(df, train))),
+  valid = models %>% map_dbl(~ rsquare(., filter(df, !train)))
+) %>% 
+  pivot_longer(cols=c(train, valid), names_to = "type", values_to = "rsquare") %>% 
+  ggplot(aes(x=n, y=rsquare, fill=type)) +
+  geom_col(position="dodge")
+```
+
+Per il dataset di addestramento $R^2$ cresce monotonicamente all'aumentare del grado del polinomio, mentre per il dataset di validazione (verde) raggiunge un massimo al grado 3, poi decresce.
+
+Questo andamento è ancora più evidente se usiamo un altro indicatore della qualità della regressione, cioè l'*errore quadratico medio* RMSE, che ha un andamento opposto (va minimizzato):
+
+$$
+\mathrm{RMSE} = \sqrt{\frac{\sum_{i=1}^n (y_i - \hat y_i)^2}{n}}
+$$
+
+```{r}
+tibble(
+  n = 1:length(models),
+  train = models %>% map_dbl(~ rmse(., filter(df, train))),
+  valid = models %>% map_dbl(~ rmse(., filter(df, !train)))
+) %>% 
+  pivot_longer(cols=c(train, valid), names_to = "type", values_to = "rmse") %>% 
+  ggplot(aes(x=n, y=rmse, fill=type)) +
+  geom_col(position="dodge")
+```
+
+Osserviamo che RMSE è minimo per una regresisone polinomiale di terzo grado, quindi per evitare sotto- e sofra-adattamento scegliamo un polinomio di terzo grado.
+
+**ESERCIZIO**: effettuare la regressione con un polinomio di terzo grado, metterla in grafico, identificare i coefficienti significativi e i loro valori, e verificare i residui.
