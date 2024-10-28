@@ -1274,3 +1274,5 @@ df %>%
 ```
 
 Anche in questo caso, il grafico non manifesta problemi, quindi **possiamo accettare l'analisi ANOVA sopra effettuata**.
+
+

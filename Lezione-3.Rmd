@@ -288,6 +288,243 @@ tibble(
   geom_col(position="dodge")
 ```
 
-Osserviamo che RMSE è minimo per una regresisone polinomiale di terzo grado, quindi per evitare sotto- e sofra-adattamento scegliamo un polinomio di terzo grado.
+Osserviamo che RMSE è minimo per una regressione polinomiale di terzo grado, quindi per evitare sotto- e sofra-adattamento scegliamo un polinomio di terzo grado.
 
 **ESERCIZIO**: effettuare la regressione con un polinomio di terzo grado, metterla in grafico, identificare i coefficienti significativi e i loro valori, e verificare i residui.
+
+
+# Dati multivariati
+
+Supponiamo di avere un processo la cui resa $y$ dipende da due variabili $x_1$ e $x_2$. in questo caso possiamo costruire una regressione del modello $y=f(x_1,x_2)$ con $f()$ una combinazione polinomiale.
+
+Analogamente a quanto fatto nei casi precedenti, cominciamo con il costruirci un data frame di dati nominali. IL corrispettivo multidimensionale di `seq()` (che crea una sequenza di valori) è `expand.grid()` (che crea un data frame con tutte le combinazioni di una serie di sequenze):
+
+```{r}
+set.seed(10)
+N <- 50
+
+# Funzione nominale
+y <- function(x1, x2) 10 - x1 + 0.1*x1^2 + 0.1*(-10*x2 + 1.5*x2^2) + 0.05*x1*x2
+
+# Griglia regolare in x1, x2
+dfn <- expand.grid(
+  x1 = seq(0, 10, length.out=N),
+  x2 = seq(0, 10, length.out=N)
+) %>% 
+  mutate(y = y(x1, x2))
+
+# Grafico a contorno:
+dfn %>% 
+  ggplot(aes(x=x1, y=x2, z=y)) +
+  geom_contour_filled()
+```
+
+Da questo campo scalare vogliamo ottenere delle *misure* ripetute tre volte in 100 posizioni casuali. Per ciascuna misura (simulata) aggiungiamo un disturbo normale a media nulla, ripetendo la misura tre volte (cioè replicando il dataset per tre volte, con disturbi differenti per ciascuna replica):
+
+```{r}
+Ns <- 100
+rpt <- 3
+
+df <- dfn %>% 
+  slice_sample(n = Ns) %>% 
+  slice(rep(1:n(), each=rpt)) %>% 
+  mutate(y = y + rnorm(n(), 0, range(y)/25))
+```
+
+Confrontiamo ora le misue simulate (data frame `df`) con quelle nominali (data frame `dfn`):
+
+```{r}
+dfn %>% 
+  ggplot(aes(x=x1, y=x2)) +
+  geom_contour(aes(z=y, color=after_stat(level)), bins=10) +
+  geom_point(data=df, mapping=aes(color=y)) +
+  scale_color_viridis_b(n.breaks=8, option="A")
+```
+
+Si noti che per cambiare il colore delle curve di livello in funzione del valore di `y` come categorizzato dalle curve stesse si usa la funzione `after_stats()`, che mette a disposizione i valori della geometria stessa *dopo che è stata calcolata*.
+
+Si noti che fin qui abbiamo solo generato i dati in un esperimento simulato. Nel caso reale avremmo solamente i dati corrispondenti alle misure:
+
+```{r}
+df %>% 
+  ggplot(aes(x=x1, y=x2)) + 
+  geom_point(data=dfn, color=grey(0.8), shape=3) +
+  geom_point(aes(color=y)) +
+  scale_color_viridis_b()
+```
+
+dove per riferimento abbiamo aggiunto anche la griglia di dati completi (crocette grige), delle quali nell'esperimento abbiamo campionato soltanto un sottoinsieme casuale di `r Ns` punti, ripetuti `r rpt` volte ciascuno.
+
+A questo punto costruiamo un modello lineare completo parabolico in `x1` e `x2`, **comprese tutte le interazioni** (cioè i termini $x_1x_2$, $x_1^2x_2$, $x_1x_2^2$, e $x_1^2x_2^2$):
+
+```{r}
+df.lm <- lm(y~poly(x1, 2, raw=T) * poly(x2, 2, raw=T), data=df)
+summary(df.lm)
+```
+
+Osserviamo che le interazioni risultano tutte non significative, quindi potremmo rimuoverle. Tuttavia $x_1x_2$ (cioè in formula `x1:x2`) ha un *p-value* del 17%: in questi casi è opportuno cautelativamente inserire comunque l'interazione e verificare con un secondo modello lineare:
+
+```{r}
+df.lm <- lm(y ~ poly(x1, 2, raw=T) + poly(x2, 2, raw=T) + x1:x2, data=df)
+summary(df.lm)
+```
+
+Come si vede $x_1x_2$ risulta significativa. Quindi possiamo accettare il modello:
+
+$$
+\hat y = \mu + a_1x_1 + a_2 x_2 + b_1 x_1^2 + b_2 x_2^2 + c x_1 x_2
+$$
+
+Confrontiamo ora in grafico il modello regredito e l'originale modello nominale:
+
+```{r}
+dfn %>% 
+  add_predictions(df.lm) %>% 
+  ggplot(aes(x=x1, y=x2, z=y)) +
+  geom_contour_filled(bins=10) +
+  geom_contour(aes(z=pred), bins=10)
+```
+
+# Regressione lineare genertalizzata
+
+Abbiamo i risultati di un esperimento che valuta il *drop test* di bottiglie di sapone liquido:
+
+```{r}
+data <- read_table(example_url("soap_bottles.dat"), comment="#")
+
+data %>% slice_head(n=6) %>% knitr::kable()
+```
+
+Il *drop test* verifica la resistenza alla caduta da 1 m di altezza di una bottiglia di sapone liquido in funzione del livello di riempimento (in % del valore nominale). Bottiglie più piene hanno un polmone d'aria (che è comprimibile) più ridotto, e quindi hanno una maggior probabilità di rottura per via della sovrapressione che si crea in seguito all'impatto col suolo. I dati dell'esperimento riportano il livello di riempimento effettivo e il risultato del test per `r length(data$run)`.
+
+L'esperimento è stato condotto impostando il dosatore dell'impianto di imbottigliamento a un livello di riempimento di 99.3% per 200 bottiglie e a 99.6% per altre 200 bottiglie, e misurando poi con un sistema di precisione l'effettivo riempimento prima del test di rottura.
+
+I risultati possiamo osservarli in un istogramma:
+
+```{r}
+data %>% 
+  ggplot(aes(x=p)) +
+  geom_histogram(bins=20, color="black", fill=gray(0.5)) +
+  geom_rug(aes(color=OK))
+```
+
+È evidente l'**andamento bimodale** dell'istogramma: ci sono cioè due massimi, dato che l'istogramma è la sovrapposizione di due distribuzioni (una a 99.3% di livello atteso, una al 99.6%). Il comando `geom_rug()` aggiunge una "stuoia" (*rug*) di linee in basso, una per ogni osservazione, colorate in funzione del risultato del *drop test*. Come si osserva, le due popolazioni sono parzialmente sovrapposte, ed è quindi il caso tipico in cui si può ottenere un classificatore con una regressione logistica.
+
+Prima di tutto dividiamo il dataset in due classi, una su cui fare la regressione e una su cui fare la validazione, in ragione di 80/20:
+
+```{r}
+set.seed(0)
+N <-  length(data$run)
+ratio <- 0.8
+n <- floor(N * ratio)
+data$training <- FALSE
+data$training[sample(1:N, n)] <- TRUE
+data %>% slice_head(n=10)
+```
+
+**ESERCIZIO**: ripetere la stessa operazione di suddivisione del dataset utilizzando le funzioni di `dplyr`.
+
+Ora possiamo costruire il modello lineare generalizzato (logistico) sul sottoinsieme di training (`family="binomial"` specifica di usare la funzione di collegamento logistica, corrispondente ad una distribuzione binomiale dei residui):
+
+```{r}
+data.glm <- glm(OK ~ p, family="binomial", data=filter(data, training))
+summary(data.glm)
+```
+
+Si noti che R assume come funzione logistica la seguente versione:
+
+$$
+\mathrm{logit}(x) = \frac{1}{1+\exp(-px-m))}
+$$
+che è del tutto equivalente alla:
+$$
+\mathrm{logit}(x) = \frac{1}{1+\exp(-p(x-x_0))}
+$$
+definendo $x_0=-m/p$.
+
+Possiamo quindi calcolare la soglia di classificazione come:
+
+```{r}
+(x0 <- -data.glm$coefficients[1] / data.glm$coefficients[2])
+```
+
+Cioè le bottiglie con un livello di riempimento effettivo superiore a `r x0` tendono a rompersi nel *drop test*, e il numero di **falsi positivi** (bottiglie al di sopra di `x0` che sopravvivono) è uguale al numero di **falsi negativi** (botiglie al di sotto di `x0` che si rompono).
+
+Aggiungiamo le predizioni ai dati originali:
+
+```{r}
+data <- data %>% 
+  add_predictions(data.glm, type="response")
+
+data %>% slice_head(n=10) %>% knitr::kable()
+```
+
+Ora possiamo mettere in grafico e confrontare i risultati del test e le predizioni, sia sui dati di training che su quelli di validazione:
+
+```{r}
+data %>% 
+  mutate(wrong = OK != (pred > 0.5)) %>% 
+  ggplot(aes(x=p, y=pred)) +
+  geom_line() +
+  geom_point(aes(y=as.numeric(OK), color=wrong)) +
+  geom_vline(xintercept = x0, linetype=2) +
+  facet_wrap(~training, nrow=2) +
+  labs(x="Livello di riempimento", y="predizione", color="pred. errata")
+```
+
+Si noti l'uso di `facet_wrap()`: separa su più grafici i dati da visualizzare, suddividendoli per i valori di fattori espressi dal secondo membro di una formula (in questo caso `~training`).
+
+Confrontiamo i conteggi per le varie condizioni (training e validazione, bottiglia rotta o meno, predizione corretta o errata):
+
+```{r}
+error_typ <- function(outcome, pred) {
+  if (outcome == pred) return("correct")
+  if (outcome & !pred) return("false neg")
+  if (!outcome & pred) return("false pos")
+}
+
+data %>% 
+  mutate(
+    type = map2_chr(!OK, pred<0.5, ~error_typ(.x, .y))) %>% 
+  group_by(training, OK, type) %>% 
+  summarise(count=n())
+```
+
+Alcune note:
+
+* ho creato una funzione per definire la tabella di verità (o matrice di confusione) per i possibili risultati del test, assumendo che **un positivo sia una bottiglia rotta** (dato che il negativo è sempre la condizione normale, attesa), e quindi un **falso positivo** sia una bottglia intera che secondo il modello dovrebbe rompersi
+* la funzione `error_typ()` non è vettorializzata, quindi per creare una colonna mediante tale funzione devo applicarla elemento per elemento, e uso la funzione `map2_chr()`, cioè una mappa a due valori che restituisce una stringa
+
+Osservando la tabella, in training ho 11 falsi negativi e 12 falsi positivi, come atteso. In validazione ho 6 falsi positivi e 4 falsi negativi: la differenza è minima e quindi **posso accettare il modello**.
+
+Le matrici di confusione possono essere create anche con la funzione `table()`:
+
+```{r}
+mc_t <- table(
+  Actual = filter(data, training) %>% pull(OK),
+  Predicted = filter(data, training) %>% pull(pred) > 0.5
+)
+round(mc_t / sum(mc_t) * 100, 1)
+```
+
+Come si vede, il vantaggio delle tabelle è che possono essere facilmente scalate e trasformate, ad esempio, in percentuali.
+
+Per i dati di validazione, come atteso, vale:
+
+```{r}
+mc_v <- table(
+  Actual = filter(data, !training) %>% pull(OK),
+  Predicted = filter(data, !training) %>% pull(pred) > 0.5
+)
+round(mc_v / sum(mc_v) * 100, 1)
+```
+
+È possibile anche in un colpo solo (e usando `$` invece di `dplyr::pull()`):
+
+```{r}
+table(
+  Actual = data$OK,
+  Predicted = data$pred > 0.5,
+  Subset = ifelse(data$training, "Training", "Validation")
+)
+```
