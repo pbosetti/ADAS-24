@@ -1,0 +1,78 @@
+---
+title: "Lezione 4: Bootstrap"
+author: "Paolo Bosetti"
+date: "`r Sys.Date()`"
+output:
+  pdf_document:
+    toc: true
+    number_sections: true
+  html_notebook:
+    toc: true
+  word_document:
+    toc: true
+  html_document:
+    toc: true
+header-includes: \usepackage[italian]{babel}
+---
+
+```{r setup, message=FALSE, warning=FALSE, include=FALSE}
+library(tidyverse)
+library(modelr)
+library(boot)
+source("my_lib.R")
+
+knitr::opts_chunk$set(
+  fig.dim=c(5,3),      # dimensioni delle figure in pollici
+  out.width = "10cm",  # larghezza figure sul documento
+  fig.align = "center"
+) 
+```
+
+# Bootstrap non-parametrico
+
+Calcoliamo l'intervallo di confidenza per la media campionaria di un singolo campione (equivalente di un T-test a un campione a due lati).
+
+Creiamo una tabella di dati e utilizziamo la funzione `boot()` per calcolare i **campioni di bootstrap**, cioè le $R$ repliche del calcolo della statistica di interesse (media) su altrettanti campioni ottenuti dal campione di partenza mediante ricampionamento con reinserimento.
+
+Si noti che l'argomento `statistic` di `boot()` deve essere una funzione con due argomenti: al primo viene passato il vettore dei dati originali; al secondo argomento viene passato, di volta in volta e per `R` volte, il vettore degli indici corrispondenti a ciascun campione di bootstrap (e sono tutti vettori lunghi tanto quanto il vettore dei dati originali):
+
+```{r}
+set.seed(1)
+R <- 50000
+data <- runif(100, 1, 10)
+
+data.b <- boot(
+  data,
+  statistic = function(x, i) mean(x[i]),
+  R = R
+)
+```
+
+Ora `data.b` contiene le informaizoni di bootstrap. In particolare, è possibile usare la funzione `boot.ci` per calcolare i limiti dell'intervallo di confidenza (qui confrontato con quello calcolato con il `t.test`):
+
+```{r}
+(data.ci <- boot.ci(data.b, conf=0.95, type="perc"))
+(data.tt <- t.test(data))
+```
+
+Si noti che l'oggetto restituito da `boot.ci` contiene il campo `$percent`, che è un vettore di 5 elementi. Secondo quanto dichiarato dall'help in linea, gli ultimi due elementi sono gli estremi dell'intervallo. Confrontiamoli graficamente con quelli calcolati secondo Student:
+
+```{r}
+data.orig <- tibble(
+  i = seq_along(data) * 500,
+  y = data
+)
+
+tibble(
+  i = 1:R,
+  t = data.b$t
+) %>% 
+  ggplot(aes(x=i, y=t)) + 
+  geom_point(size=0.5) +
+  geom_point(data=data.orig, aes(x=i, y=y), color=gray(0.5)) +
+  geom_hline(yintercept=data.tt$conf.int[1], color="red") +
+  geom_hline(yintercept=data.tt$conf.int[2], color="red") +
+  geom_hline(yintercept=data.ci$percent[4], color="green", linetype=2) +
+  geom_hline(yintercept=data.ci$percent[5], color="green", linetype=2)
+```
+

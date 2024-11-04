@@ -18,6 +18,7 @@ header-includes: \usepackage[italian]{babel}
 ```{r setup, message=FALSE, warning=FALSE, include=FALSE}
 library(tidyverse)
 library(modelr)
+library(ROCR)
 source("my_lib.R")
 
 knitr::opts_chunk$set(
@@ -529,6 +530,16 @@ table(
 )
 ```
 
+```{r}
+pred <- prediction(filter(data, training)$pred, filter(data, training)$OK)
+perf <- performance(pred, "tnr", "fnr")
+plot(perf, colorize=T, print.cutoffs.at=seq(0, 1, 0.2))
+```
+```{r}
+perf <- performance(pred, "tpr", "fpr")
+plot(perf, colorize=T, print.cutoffs.at=seq(0, 1, 0.2))
+```
+
 
 ## Esercizio
 
@@ -582,4 +593,85 @@ df %>%
 ```
 Procedere con realizzare il modello e verificarne l'efficacia con le matrici di confusione.
 
+
+# Regressione ai minimi quadrati (non lineare)
+
+Consideriamo il caso di un esperimento di indentazione strumentata, in cui un indentatore di forma definita (ad es. un [indentatore Vickers](https://it.wikipedia.org/wiki/Scala_Vickers)) viene premuto sulla superficie di un materiale monitorando il carico in funzione dello spostamento (o del tempo, se lo spostamento avviene a velocità costante). 
+
+Ci si aspetta un andamento piatto finché non c'è contatto, seguito da un ramo di parabola, raccordata in tangenza nel punto di transizione.
+
+Rusulta:
+
+```{r}
+f <- function(t, t0=0, bias=0, a=1) {
+  b <- -2 * a * t0
+  c <-  bias + a * t0^2
+  y <- a * t^2 + b * t + c
+  return(ifelse(t < t0, bias, y))
+}
+
+ggplot() +
+  geom_function(fun=f, args=list(bias=1, t0=-1, a=0.5)) +
+  xlim(c(-2.5,5)) +
+  labs(x="Tempo (s)", y="Carico (N)")
+```
+
+Costruiamo i dati con un disturbo normale:
+
+```{r}
+set.seed(1)
+
+data <- tibble(
+  t = seq(-10, 10, length.out=100),
+  yn = f(t, 2.5, 3, 1),
+  y = yn + rnorm(length(t), 0, 2)
+)
+
+data %>% 
+  ggplot(aes(x=t)) +
+  geom_point(aes(y=y)) 
+  
+```
+
+È il caso di una regressione di un *modello fisico*, che però non è lineare (e non è nemmeno analitico, essendo definito per parti).
+
+La regressione non è quindi realizzabile né con `lm`, né con `glm`. È necessario ricorrere alla **regressione ai minimi quadrati** (*Non-linear Least Squares*) con `nlm`:
+
+```{r}
+data.nls <- nls(y~f(t, t0, b, a),
+                data = data,
+                start=list(
+                  t0 = 1,
+                  b = 34,
+                  a = -10
+                ),
+                trace=T)
+
+summary(data.nls)
+```
+
+Si noti che `nlm` accetta i parametri simili a `lm`, con in più la lista `start`, che deve contenere dei valori iniziali ragionevoli per i parametri del modello. Il parametro `trace` stampa invece i singoli passi di ottimizzazione (serve solo per un eventuale debug).
+
+Ora visualizziamo la regressione, cioè i valori predetti dal modello:
+
+```{r}
+data %>% 
+  add_predictions(data.nls) %>% 
+  ggplot(aes(x=t)) +
+  geom_point(aes(y=y)) +
+  geom_line(aes(y=pred), color="red") 
+```
+
+E infine verifichiamo la normalità dei residui:
+
+```{r}
+data %>% 
+  add_residuals(data.nls) %>% 
+  ggplot(aes(sample=resid)) +
+  geom_qq() +
+  geom_qq_line(color="red")
+```
+```{r}
+data.nls %>% residuals() %>% shapiro.test()
+```
 
