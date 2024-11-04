@@ -116,4 +116,4 @@ tibble(
   geom_hline(yintercept=data.ci$percent[5], color="green", linetype=2)
 ```
 
-**Esercizio**: trasfromare l'ultimo grafico in un istogramma con le linee verticali che rappresentano l'intervallo di confidenza.
+**Esercizio**: trasformare l'ultimo grafico in un istogramma con le linee verticali che rappresentano l'intervallo di confidenza.
