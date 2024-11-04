@@ -492,7 +492,7 @@ data %>%
 
 Alcune note:
 
-* ho creato una funzione per definire la tabella di verità (o matrice di confusione) per i possibili risultati del test, assumendo che **un positivo sia una bottiglia rotta** (dato che il negativo è sempre la condizione normale, attesa), e quindi un **falso positivo** sia una bottglia intera che secondo il modello dovrebbe rompersi
+* ho creato una funzione per definire la tabella di verità (o matrice di confusione) per i possibili risultati del test, assumendo che **un positivo sia una bottiglia rotta** (dato che il negativo è sempre la condizione normale, attesa), e quindi un **falso positivo** sia una bottiglia intera che secondo il modello dovrebbe rompersi
 * la funzione `error_typ()` non è vettorializzata, quindi per creare una colonna mediante tale funzione devo applicarla elemento per elemento, e uso la funzione `map2_chr()`, cioè una mappa a due valori che restituisce una stringa
 
 Osservando la tabella, in training ho 11 falsi negativi e 12 falsi positivi, come atteso. In validazione ho 6 falsi positivi e 4 falsi negativi: la differenza è minima e quindi **posso accettare il modello**.
@@ -501,8 +501,8 @@ Le matrici di confusione possono essere create anche con la funzione `table()`:
 
 ```{r}
 mc_t <- table(
-  Actual = filter(data, training) %>% pull(OK),
-  Predicted = filter(data, training) %>% pull(pred) > 0.5
+  Actual = filter(data, training) %>% mutate(positive=!OK) %>% pull(positive),
+  Predicted = filter(data, training) %>% pull(pred) < 0.5
 )
 round(mc_t / sum(mc_t) * 100, 1)
 ```
@@ -513,8 +513,8 @@ Per i dati di validazione, come atteso, vale:
 
 ```{r}
 mc_v <- table(
-  Actual = filter(data, !training) %>% pull(OK),
-  Predicted = filter(data, !training) %>% pull(pred) > 0.5
+  Actual = filter(data, !training) %>% mutate(positive=!OK) %>% pull(positive),
+  Predicted = filter(data, !training) %>% pull(pred) < 0.5
 )
 round(mc_v / sum(mc_v) * 100, 1)
 ```
@@ -523,8 +523,63 @@ round(mc_v / sum(mc_v) * 100, 1)
 
 ```{r}
 table(
-  Actual = data$OK,
-  Predicted = data$pred > 0.5,
+  Actual = !data$OK,
+  Predicted = data$pred < 0.5,
   Subset = ifelse(data$training, "Training", "Validation")
 )
 ```
+
+
+## Esercizio
+
+Consideriamo il data frame `iris`, che categorizza tre diverse specie di fiori a seconda delle dimensione dei petali e dei sepali. Come si vede, le tre specie sono equi-popolate:
+
+```{r}
+iris %>% 
+  group_by(Species) %>% 
+  summarise(count=n())
+```
+
+Aggiungiamo una colonna per il training (80-20), e realizziamo qualche plot:
+
+```{r}
+df <- iris %>%
+  mutate(
+    Sepal = Sepal.Length * Sepal.Width,
+    Petal = Petal.Length * Petal.Width,
+    Train = sample(c(F,T), n(), prob=c(20, 80), replace=T)
+  )  
+
+df %>% 
+  ggplot(aes(x=Petal.Width, y=Petal.Length, color=Species, shape=Train)) +
+  geom_point()
+
+df %>% 
+  ggplot(aes(x=Sepal.Width, y=Sepal.Length, color=Species, shape=Train)) +
+  geom_point()
+```
+Oppure con `GGally`:
+
+```{r message=FALSE}
+library(GGally)
+ggpairs(iris, columns=1:4, mapping=aes(color=Species))
+```
+
+Tralasciamo la specie `setosa` (molto differente) e concentriamoci sulle altre due, costruendo un classificatore logistico per la specie `versicolor`. Osservando che larghezza e lunghezza delle caratteristiche sono direttamente correlate, costruiamo una combinazione e lavoriamo su di essa:
+
+
+
+```{r}
+df <- df %>% 
+  filter(Species != "setosa") %>% 
+  mutate(
+    Versicolor = as.numeric(Species == "versicolor")
+  )
+
+df %>% 
+  ggplot(aes(x=Petal, y=Sepal, color=factor(Versicolor))) +
+  geom_point()
+```
+Procedere con realizzare il modello e verificarne l'efficacia con le matrici di confusione.
+
+
