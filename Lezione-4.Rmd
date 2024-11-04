@@ -48,7 +48,47 @@ data.b <- boot(
 )
 ```
 
-Ora `data.b` contiene le informaizoni di bootstrap. In particolare, è possibile usare la funzione `boot.ci` per calcolare i limiti dell'intervallo di confidenza (qui confrontato con quello calcolato con il `t.test`):
+È come dire che se abbiamo il campione 
+
+```{r}
+(v <- rnorm(5))
+```
+
+i campioni di bootstrap li generiamo a partire da una lista di sequenze casuali di indici:
+
+```{r}
+index <- list(
+  sample(1:5, 5, replace=T),
+  sample(1:5, 5, replace=T),
+  sample(1:5, 5, replace=T),
+  sample(1:5, 5, replace=T)
+)
+```
+
+a cui corrispondono i campioni di bootstrap:
+
+```{r}
+list(
+  v[index[[1]]],
+  v[index[[2]]],
+  v[index[[3]]],
+  v[index[[4]]] 
+)
+```
+e le corrispettive stime:
+
+```{r}
+list(
+  mean(v[index[[1]]]),
+  mean(v[index[[2]]]),
+  mean(v[index[[3]]]),
+  mean(v[index[[4]]])
+)
+```
+
+Quanto sopra per $R=4$. Se vogliamo realizzare migliaia di campioni di bootstrap o automatizziamo questa procedura (ad es. usando le funzioni `map`, e questo può essere un valido esercizio), oppure usiamo la funzione `boot`, che chiama appunto la funzione passata all'argomento `statistic` applicandola al vettore dei dati (nell'esempio: `v`) e passando di volta in volta un nuovo vettore di indici (nell'esempio: `index[i]`).
+
+Ora `data.b` contiene le informazioni di bootstrap. In particolare, è possibile usare la funzione `boot.ci` per calcolare i limiti dell'intervallo di confidenza (qui confrontato con quello calcolato con il `t.test`):
 
 ```{r}
 (data.ci <- boot.ci(data.b, conf=0.95, type="perc"))
@@ -76,3 +116,4 @@ tibble(
   geom_hline(yintercept=data.ci$percent[5], color="green", linetype=2)
 ```
 
+**Esercizio**: trasfromare l'ultimo grafico in un istogramma con le linee verticali che rappresentano l'intervallo di confidenza.
