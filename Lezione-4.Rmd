@@ -160,7 +160,7 @@ data %>%
 lm(y~x, data=data)$coefficients
 ```
 
-Per calcolarci l'intervalo di confidfenza con la tecnica bootstrap abbiamo bisogno di una funzione che mi restituisca i due parametri a partire dalla matrice (o tabella) di dati:
+Per calcolarci l'intervallo di confidfenza con la tecnica bootstrap abbiamo bisogno di una funzione che mi restituisca i due parametri a partire dalla matrice (o tabella) di dati:
 
 
 ```{r}
