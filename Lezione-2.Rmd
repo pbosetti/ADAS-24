@@ -563,6 +563,44 @@ income2 %>%
 
 Esercizio: usando un *left join* tradurre i nomi delle religioni nel grafico.
 
+```{r}
+income_t <- income2 %>% 
+  left_join(
+    tibble(
+      religion = income2 %>% pull(religion) %>% as.factor() %>% levels(),
+      religione = c("Agnostico", "Ateo", "Buddista", "Cattolico", "Non sa/non risponde", "Evangelico", "Hindu",
+                    "Protestante nero", "Testimone di Jehovah", "Ebreo", "Protestante", "Mormone", "Musulmano", "Ortodosso",
+                    "Altro cristiano", "Altra fede", "Altra religione mondiale", "Non affiliato")
+    )
+  )
+
+religione_ord <- income_t %>% 
+  filter(income_n == 300) %>% # considero solo i più ricchi
+  arrange(desc(perc)) %>%     # in ordine decrescente
+  pull(religione) %>%          # estraggo solo la colonna religion
+  factor(ordered = T)         # trasformo in vettore ordinato
+
+religione_ord
+
+
+income_t %>% 
+  mutate(
+    religione = factor(religione, levels=religione_ord, ordered=T)
+  ) %>% 
+  filter(income_n != 0) %>% 
+  ggplot(aes(x=religione, y=perc, fill=income)) +
+  geom_col() +
+  geom_hline(yintercept=100, linetype=2) +
+  coord_flip() +
+  scale_fill_viridis_d() +
+  labs(
+    x="Religione",
+    y="Sul totale (%)",
+    fill="Reddito"
+  )
+```
+
+
 # Statistica inferenziale
 
 ## Test di Student
@@ -739,12 +777,32 @@ which.max(abs(s1 - mean(s1)))
 
 Dopo aver eliminato dai campioni `s1` e `s2` gli eventuali punti anomali mediante test di Grubb, verificare con un test di Student se i valori attesi dei due campioni siano uguali o meno.
 
+```{r}
+grubbs.test(s1)
+grubbs.test(s2)
+```
+```{r}
+s1[which.max(s1)] <- NA
+
+var.test(na.omit(s1) %>% as.numeric(), s2)
+t.test(na.omit(s1) %>% as.numeric(), s2, var.equal=T)
+```
+
+
 
 ## Anomalie -- 2
 
 Generare un campione di `r (N<-35)` dati normali con media `r (m<-38.7)` e deviazione standard `r (sd<-3.15)`. Modificare il quindicesimo punto assegnandogli il valore `r (v<-m+3.0*sd)`.
 
 Commentare il risultato applicando sia il test di Chauvenet, sia il test di Grubb.
+
+```{r}
+v <- rnorm(35, 38.7, 3.15)
+v[15] <- 38.7 + 3 * 3.15
+chauvenet(v)
+grubbs.test(v)
+```
+Secondo Chauvenet il punto va rigettato, secondo Grubbs il p-value è del 7% (un po' alto). Si noti che il punto agiunto sta a tre deviazioni standard dalla media: nella distribuzione normale l'intervallo $\pm 3\sigma$ contiene il 99.7% delle osservazioni.
 
 
 ## Test di Student a un campione
@@ -1074,6 +1132,18 @@ df.tuk$Cotton %>%
 
 **Esercizio**: provare a cambiare il valore del livello di confidenza e discutere le variazioni conseguenti sul grafico.
 
+```{r}
+df.tuk <- TukeyHSD(aov(Strength~Cotton, data=df), conf.level = 0.90)
+df.tuk$Cotton %>% 
+  fortify() %>% # Per convertire in tibble
+  rownames_to_column("id") %>% 
+  ggplot(aes(x=id)) +
+  geom_point(aes(y=diff)) +
+  geom_hline(yintercept = 0, color="red") +
+  geom_errorbar(aes(ymin=lwr, ymax=upr)) +
+  coord_flip()
+```
+*Si osserva che riducendo il livello di confidenza dal 99% al 90% gli intervalli diventano **più piccoli**, cioè basta una difeferenza tra i campioni più piccola per rifiutare l'ipotesi nulla.*
 
 ## ANOVA a due vie
 

@@ -293,6 +293,26 @@ Osserviamo che RMSE è minimo per una regressione polinomiale di terzo grado, qu
 
 **ESERCIZIO**: effettuare la regressione con un polinomio di terzo grado, metterla in grafico, identificare i coefficienti significativi e i loro valori, e verificare i residui.
 
+```{r}
+df.lm <- lm(y~poly(x, 3, raw=T), data=df)
+summary(df.lm)
+```
+```{r}
+df.lm <- lm(y~poly(x, 3, raw=T)-1, data=df) # rimuovo il termine di grado 0
+summary(df.lm)
+df %>% 
+  add_predictions(df.lm) %>% 
+  ggplot(aes(x=x)) + 
+  geom_point(aes(y=y)) + 
+  geom_line(aes(y=pred), color="red")
+
+df %>% 
+  add_residuals(df.lm) %>% 
+  ggplot(aes(sample=resid)) +
+  geom_qq() + 
+  geom_qq_line(color="red")
+```
+
 
 # Dati multivariati
 
@@ -424,6 +444,16 @@ data %>% slice_head(n=10)
 ```
 
 **ESERCIZIO**: ripetere la stessa operazione di suddivisione del dataset utilizzando le funzioni di `dplyr`.
+
+```{r}
+data %>% 
+  mutate(
+    training = sample(c(T,F), n(), prob=c(80, 20), replace=T)
+  )
+```
+
+
+
 
 Ora possiamo costruire il modello lineare generalizzato (logistico) sul sottoinsieme di training (`family="binomial"` specifica di usare la funzione di collegamento logistica, corrispondente ad una distribuzione binomiale dei residui):
 
