@@ -1,0 +1,201 @@
+---
+title: "Recap"
+author: "Paolo Bosetti"
+date: "`r Sys.Date()`"
+output:
+  pdf_document:
+    toc: true
+    number_sections: true
+  html_notebook:
+    toc: true
+  word_document:
+    toc: true
+  html_document:
+    toc: true
+header-includes: \usepackage[italian]{babel}
+---
+
+```{r setup, message=FALSE, warning=FALSE, include=FALSE}
+library(tidyverse)
+library(modelr)
+library(boot)
+library(patchwork)
+source("my_lib.R")
+
+knitr::opts_chunk$set(
+  fig.dim=c(5,3),      # dimensioni delle figure in pollici
+  out.width = "10cm",  # larghezza figure sul documento
+  fig.align = "center"
+) 
+```
+
+# Recap del linguaggio R
+
+In questo documento ricordiamo le funzioni più comuni e utili del linguaggio R e dell'ambiente esteso (Tidyverse).
+
+Si ricorda l'utilità dei *cheat sheet*, raggiungibili dal menu `Help > Cheat Sheets` di RStudio.
+
+## Vettori, matrici, liste
+
+```{r}
+v <- c(1,4,2,7,4,3)
+names(v) <- letters[1:length(v)]
+v
+
+v[c(T,F)]
+
+(m <- matrix(v, ncol=2, byrow = F))
+m[1,]
+m[,2]
+
+list(1,2,3)
+l <- list(
+  a=1, b=2, c=3
+)
+cat("come lista:\n")
+l[1]
+cat("come elemento:\n")
+l[[1]]
+cat("come elemento nominato:\n")
+l$a
+```
+
+## Sequenze
+
+```{r}
+v <- 1:10
+v <- seq(1, 10, 2)
+v <- seq(1, 10, length.out=7)
+v2 <- seq_along(v)
+list(v, v2)
+```
+
+## Sequenze n-dimensionali, o griglie
+
+```{r}
+expand.grid(A=factor(1:3), B=LETTERS[1:3], Y=NA)
+```
+
+## Cicli
+
+Nella maggior patte dei casi le funzioni di R sono vettorializzate. Se non lo sono si ricorre a loop `for`:
+
+```{r}
+for (i in seq_along(v)) {
+  cat(paste(i, ":", v[i], "\n"))
+}
+```
+
+In generale è preferibile usare l'approccio funzionale della libreria `purrr`:
+
+```{r}
+lst <- map(v, ~ as.character(i^2))
+chr <- map_chr(v, ~ as.character(i^2))
+walk(v, ~ cat(., " "))
+cat("\n")
+iwalk(v, ~ cat(paste0(.y, ": ", .x, "\n")))
+```
+
+## Tabelle
+
+Al posto dei `data.frame` preferiamo l'uso delle `tibble`:
+
+```{r}
+t <- tibble(
+  A=1:10,
+  B=A^2
+)
+t$A
+t[3,]
+```
+
+## Distribuzioni
+
+Le distribzioni sono gestite con le famiglie di funzioni `dpqr`: 
+
+- <p|d|q|r><unif|norm|t|chisq|f|binom|pois|...>()
+- set.seed
+- ecdf
+- cut
+
+
+## Indicatori
+
+Gli indicatori, o stimatori, di un campione possono essere calcolati con:
+
+- mean
+- var
+- sd
+- cor
+- cov
+- min
+- max
+- range
+- quantile
+
+
+## Inferenza
+
+Operazioni di inferenza statictica sono effettuate con:
+
+- t.test
+- var.test
+- chisq.test
+- shapiro.test
+- outliers::grubbs.test
+- lm
+- anova
+- aov
+- summary
+- residuals
+- TukeyHSD
+
+
+## Regressione
+
+- lm
+- glm
+- nls
+- modelr::add_residuals
+- modelr::add_predictions
+
+
+# Plotting
+
+Libreria `ggplot2`:
+
+- ggplot
+- aes
+- geom_point
+- geom_line
+- geom_[ab|h|v]line
+- geom_qq
+- geom_qq_line
+- geom_histogram
+- geom_boxplot
+- geom_contour
+- geom_contour_filled
+- geom_function
+- geom_path
+
+
+## Gestione tabelle
+
+Libreria `dplyr`:
+
+- arrange
+- filter
+- select
+- mutate
+- pull
+- left_join
+- group_by
+- summarise
+- ungroup
+- pivot_longer
+- pivot_wider
+
+
+## ATTENZIONE: Funzioni generiche
+
+L'help di alcune funzioni specifica che si tratta di **funzioni generiche**: significa che l'effettiva funzione viene chiamata a seconda della classe del primo argomento. Ad esempio, `summary` è una funzione generica e se il primo argomento è un oggetto `lm`, l'effettiva funzione chiamata è `summary.lm`, per la quale va cercato l'help.
