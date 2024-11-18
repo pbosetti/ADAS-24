@@ -183,3 +183,4 @@ rs %>%
   labs(x="Angle (coded units)", y="Speed (c.u.)", fill="Tool life")
 ```
 
+**Nota**: l'estetica `aes(label=round(after_stat(level), 2))` serve a specificare le etichette delle curve di livello. I valori di queste etichette sono impostati da una statistica calcolata all'interno della medesima funzione `metR::geom_contour2` (vedi l'help, nella sezione *computed variables*). In tutte le geometrie ggplot, le statistiche interne possono essere utilizzate con la funzione `after_stat()`. Vedere l'help `?ggplot2::aes_eval` per i dettagli.
