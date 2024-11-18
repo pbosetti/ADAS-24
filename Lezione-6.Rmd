@@ -1,0 +1,185 @@
+---
+title: "Lezione 6: Design of Experiments"
+author: "Paolo Bosetti"
+date: "`r Sys.Date()`"
+output:
+  pdf_document:
+    toc: true
+    number_sections: true
+  html_notebook:
+    toc: true
+header-includes: \usepackage[italian]{babel}
+---
+
+```{r setup, message=FALSE, warning=FALSE, include=FALSE}
+library(tidyverse)
+library(modelr)
+library(boot)
+library(patchwork)
+library(PearsonDS)
+source("my_lib.R")
+
+knitr::opts_chunk$set(
+  fig.dim=c(5,3),      # dimensioni delle figure in pollici
+  out.width = "10cm",  # larghezza figure sul documento
+  fig.align = "center"
+) 
+```
+
+# Esempio: Vita di un utensile
+
+Mediante un piano fattoriale $3^2$ vogliamo studiare l'influenza della velocità di taglio e dell'angolo di spoglia sulla durata di un utensile da taglio per tornitura. Ripetiamo ogni trattamento due volte.
+
+Fattori:
+
+1. A: Angolo di spoglia (15, 20, 25)
+2. B: Velocità di taglio (125, 150, 175)
+3. Resa: vita (durata) dell'utensile da taglio
+
+## Preparazione della griglia di test
+
+Cominciamo preparando la tabella con tutti i trattamenti, cioè tutte le possibili combinazioni di livelli dei due fattori. Aggiungiamo una colonna per l'ordine standard e una per l'ordine casuale di esecuzione delle prove. Aggiungiamo anche le colonne `A` e `B` per i due fattori in *unità codificate**.
+
+```{r}
+df <- expand.grid(
+  Angle = c(15, 20, 25), # gradi
+  Speed = c(125, 150, 175), # m/min
+  Repeat = c(1,2),
+  Response = NA
+) %>% 
+  mutate(
+    StdOrder = 1:n(),
+    RunOrder = sample(n()),
+    A = scales::rescale(Angle, to=c(-1,1)),
+    B = scales::rescale(Speed, to=c(-1,1)),
+    .before = Angle
+  )
+```
+
+Riordiniamo la tabella secondo la colonna `RunOrder` e la esportiamo in formato `.csv`:
+
+```{r}
+df %>% 
+  arrange(RunOrder) %>% 
+  write.csv2("factorial_plan.csv")
+```
+
+## Conduzione esperimenti
+
+La tabella esportata viene utilizzata per la conduzione degli esperimenti. Per ogni trattamento, condotti in ordine casuale secondo colonna `RunOrder`, si riempie la colonna `Response` con i risultati ottenuti.
+
+## Importazione risultati
+
+La tabella dati, questa volta con la colonna `Response` completa, viene poi nuovamente caricata (quella disponibile online è incidentalmente in formato testo anzichè `.csv`):
+
+```{r}
+df <- read.table(example_url("cutting.dat"), header=T) %>% 
+  mutate(
+    A = scales::rescale(Angle, to=c(-1, 1)),
+    B = scales::rescale(Speed, to=c(-1,1)),
+    .after = Speed
+  )
+
+head(df) %>% knitr::kable()
+```
+
+## Analisi della varianza
+
+Costruiamo un modello lineare completo fino al secondo grado (dato che abbiamo tre livelli) e analizziamo la varianza:
+
+```{r}
+df.lm <- lm(Response ~ A * B * I(A^2) * I(B^2), data=df)
+anova(df.lm)
+```
+
+Verifichiamo i residui
+
+```{r}
+df <- df %>% add_residuals(df.lm)
+
+df %>% 
+  ggplot(aes(x=Angle, y=resid)) + geom_point()
+
+df %>% 
+  ggplot(aes(x=Speed, y=resid)) + geom_point()
+
+df %>% 
+  ggplot(aes(x=RunOrder, y=resid)) + geom_point()
+
+df %>% 
+  ggplot(aes(sample=resid)) +
+  geom_qq() + 
+  geom_qq_line(color="red")
+
+shapiro.test(df$resid)
+```
+
+I residui risultano normali e privi di pattern.
+
+## Riformulare il modello
+
+Dato che i termini `I(B^2)` (che corrisponde a coefficiente $\beta_2$) e `B:I(A^2)` (che corrisponde a $(\alpha\beta)_{2,1}$) sono non-significativi, possiamo riformulare il modello lineare:
+
+```{r}
+df.lm2 <- lm(Response ~ A * B + I(A^2) + A:I(B^2) + I(A^2):I(B^2), data=df)
+anova(df.lm2)
+```
+
+Anche per questo modello è necessario verificare l'adeguatezza, studiando i residui:
+
+```{r}
+df <- df %>% add_residuals(df.lm2)
+
+df %>% 
+  ggplot(aes(x=Angle, y=resid)) + geom_point()
+
+df %>% 
+  ggplot(aes(x=Speed, y=resid)) + geom_point()
+
+df %>% 
+  ggplot(aes(x=RunOrder, y=resid)) + geom_point()
+
+df %>% 
+  ggplot(aes(sample=resid)) +
+  geom_qq() + 
+  geom_qq_line(color="red")
+
+shapiro.test(df$resid)
+```
+
+La normalità e l'assenza di pattern mi consentono di accettare il modello.
+
+
+## Superficie di risposta
+
+Infine possiamo costruire la superficie di risposta per il modello `df.lm2`.
+
+Abbiamo bisogno di una griglia regolare di punti nel dominio di A e B. Su questa griglia possiamo valutare il modello usando la funzione `modelr::add_predictions()`:
+
+```{r}
+rs <- expand.grid(
+  A = seq(-1, 1, length.out=50),
+  B = seq(-1, 1, length.out=50)
+) %>% 
+  add_predictions(df.lm2)
+```
+
+Il nuovo data frame `rs` può essere visualizzato con un grafico a contorno:
+
+```{r}
+rs %>% 
+  ggplot(aes(x=A, y=B, z=pred)) + 
+  geom_contour_filled(bins=20)
+```
+
+Il grafico è probabilmente più chiaro usando il pacchetto `metR`, che mette a disposizione due funzioni alternative per creare un grafico a contorno con le etichette sovrapposte alle curve di livello:
+
+```{r}
+rs %>% 
+  ggplot(aes(x=A, y=B, z=pred)) + 
+  metR::geom_contour_fill(bins=20) +
+  metR::geom_contour2(aes(label=round(after_stat(level), 2)), bins=20) +
+  scale_fill_viridis_c() + 
+  labs(x="Angle (coded units)", y="Speed (c.u.)", fill="Tool life")
+```
+

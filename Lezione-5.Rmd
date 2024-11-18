@@ -8,10 +8,6 @@ output:
     number_sections: true
   html_notebook:
     toc: true
-  word_document:
-    toc: true
-  html_document:
-    toc: true
 header-includes: \usepackage[italian]{babel}
 ---
 
@@ -20,6 +16,7 @@ library(tidyverse)
 library(modelr)
 library(boot)
 library(patchwork)
+library(PearsonDS)
 source("my_lib.R")
 
 knitr::opts_chunk$set(
@@ -282,4 +279,74 @@ data.f %>%
 ```
 
 Cioè: l'ordine di esecuzione casuale consente di evidenziare eventuali effetti modificanti e di eliminarli dalla regressione.
+
+
+## Monte Carlo
+
+```{r}
+set.seed(0)
+N <- 10000
+rbar <- 120
+ur <- 0.5
+lbar <- 450
+ul <- 0.5
+
+params <- list(
+  mean = lbar,
+  variance = ul^2,
+  skewness = 1,
+  kurtosis = 5
+)
+
+data <- tibble(
+  r = rnorm(N, rbar, ur),
+  l = rpearson(N, moments=params)
+)
+```
+
+Verifichiamo con istogrammi le due distribuzioni:
+
+```{r}
+data %>% 
+  ggplot(aes(x=r)) +
+  geom_histogram(binwidth=ur/5, fill=gray(0.5), color="black") +
+  geom_vline(xintercept=rbar, linetype=2) +
+  geom_vline(xintercept=c(-ur, ur)+rbar, linetype=2, color="red")
+
+data %>% 
+  ggplot(aes(x=l)) +
+  geom_histogram(binwidth=ul/5, fill=gray(0.5), color="black") +
+  geom_vline(xintercept=lbar, linetype=2) +
+  geom_vline(xintercept=c(-ul, ul)+lbar, linetype=2, color="red")
+```
+
+```{r}
+data <- data %>% 
+  mutate(
+    V = pi * r^2 * l / 1e6
+  )
+
+head(data)
+```
+
+Studiamo la distribuzione del volume:
+
+```{r}
+vbar <- mean(data$V)
+uv <- sd(data$V)
+
+cat("Volume medio:", vbar, "\n")
+cat("Incerteza standard:", uv, "\n")
+```
+
+```{r}
+data %>% 
+  ggplot(aes(x=V)) + 
+  geom_histogram(bins=30, fill=grey(0.5), color="black") +
+  geom_vline(xintercept=vbar, linetype=2) + 
+  geom_vline(xintercept=c(-uv, uv) + vbar, color="red", linetype=2)
+```
+```{r}
+cor.test(data$r, data$l)
+```
 
