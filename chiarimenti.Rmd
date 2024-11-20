@@ -1,0 +1,392 @@
+---
+title: "Chiarimenti"
+author: "Paolo Bosetti"
+date: "`r Sys.Date()`"
+output:
+  pdf_document:
+    toc: true
+  html_notebook: 
+    toc: true
+    number_sections: true
+header-includes: \usepackage[italian]{babel}
+---
+
+```{r setup, message=FALSE, warning=FALSE, include=FALSE}
+library(tidyverse)
+library(modelr)
+library(boot)
+library(patchwork)
+library(PearsonDS)
+source("my_lib.R")
+
+knitr::opts_chunk$set(
+  fig.dim=c(5,3),      # dimensioni delle figure in pollici
+  out.width = "10cm",  # larghezza figure sul documento
+  fig.align = "center"
+) 
+```
+
+# Parte 2
+
+Domande ricevute:
+
+> * Come ordinare le tabelle --> pivot_longer, aggreagate, group_by, left_joint e tutte le funzioni collegate. E' complicato capire cosa si sta effetivamente facendo. 
+> * Intervalli di confidenza --> come crearli corretamente con ggplot
+> * Esercizio income religioni --> mi risulta particolarmente difficile comprendere l'esercizio svolto sulla creazione di grafici a barre per la tibble Religion_income
+> * Quantile --> cosa rappresenta il quantile e come si rappresenta un grafico Q-Q su ggplot
+> * Libreria dplyr
+> * Libreria purrr
+> * p-value
+> * ANOVA
+
+## Libreria `dplyr` e `tidyr`
+
+La libreria mette a disposizione funzioni per manipolare tabelle di dati (*data transformation*). Una tabella è fatta di **variabili** (cioè le colonne) e **osservazioni** o **casi** (cioè le righe).
+
+**ATTENZIONE**: tutte le funzioni di manipolazione di Tidyverse non modificano la tabella (tibble) su cio operano, ma restituiscono una nuova tabella. La nuova tabella può essere usata direttamente (passandola in pipe ad es. a ggplot) ma va persa subito dopo. Oppure può essere salvata in una nuova variabile (oppure nella stessa tabella, sovrascrivendola).
+
+### Manipolare le osservazioni
+
+```{r}
+starwars %>% head()
+```
+
+Possiamo **filtrare**, **ordinare**, o **aggiungere** osservazioni:
+
+```{r}
+# filtrare: si passano una o più condizioni logiche
+# attenzione a is.na() (è sbagliato scrivere a != NA)
+starwars %>% 
+  filter(height > 100, !is.na(hair_color)) %>% 
+  slice_sample(n=5)
+# NOTA: na.omit() rimuove tutte le osservazioni con almeno una variabile NA
+```
+```{r}
+# ordinare: default in ordine decrescente
+starwars %>% 
+  arrange(desc(height)) %>% 
+  slice_head(n=5)
+```
+```{r}
+# aggiungere un'osservazione
+# le variabili non definite sono NA
+starwars %>% 
+  add_row(name = "Paolo Bosetti", height = 183, mass = 82) %>% 
+  arrange(name) %>% 
+  filter(height == 183) %>% 
+  slice_head(n=5)
+# oppure passando una tibble
+starwars %>% 
+  add_row(tibble(name=c("Mr. X", "Mr. Y"), height=c(180, 175)), .before = 1) %>% 
+  slice_head(n=5)
+```
+
+
+### Sommarizzare le osservazioni
+
+Raggruppiamo le osservazioni per variabili con uguale valore, poi applichiamo una **statistica** a ciascun gruppo:
+
+```{r}
+# è consigliable usare separatamente group_by e poi summarise, specificando
+# .groups="keep", cioè "mantieni i gruppi definiti nel passaggio precedente
+starwars %>% 
+  group_by(species, sex) %>% 
+  summarise(height=median(height), number=n(), .groups="keep") %>% 
+  filter(number > 1)
+```
+
+Come **statistiche** si possono usare tutte le funzioni statistiche di base (`mean`, `var`, `sd`, `median`, `quantile`, `min`, `max`, ...), cioè tutte le funzioni che da un vettore producono uno scalare. In generale va bene una qualsiasi **espressione di lunghezza 1**. 
+
+
+### Manipolare le variabili
+
+Le variabili (cioè le colonne) possono essere **estratte**, **selezionate**, **spostate**, **rinominate**, **modificate**:
+
+```{r}
+# estrazione: da una tabella si ottiene un vettore
+(starwars %>% 
+  pull(height))[1:10]
+```
+
+```{r}
+# selezione: si ottiene una tabella più stretta con solo alcune variabili
+starwars %>% 
+  select((name | hair_color:species) & !eye_color) %>% slice_head(n=5)
+```
+vedere l'help di `select` per le numerose utilità di selezione.
+
+```{r}
+# spostare:
+starwars %>% 
+  relocate(gender, .after=name) %>% slice_head(n=5)
+
+```
+
+```{r}
+# rinominare
+starwars %>% 
+  rename(character=name) %>% 
+  rename_with(\(s) str_to_upper(s)) %>%  # applica una funzione a tutti i nomi
+                                         # sono utili le funzioni di stringr
+  slice_head(n=1)
+```
+
+```{r}
+# modificare: applicare una funzione vettorializzata a tutte le osservazioni di una colonna
+# si può modificare una colonna esistente o crearne una nuova
+starwars %>% 
+  mutate(height = height/100) %>% 
+  slice_head(n=1)
+```
+
+### Combinare tabelle
+
+Usare `bind_cols()` per affiancare due tabelle (con ugual numero di righe), `bind_rows()` per appendere la seconda alla prima (con gli stessi nomi di colonna). Queste funzioni non considerano **nessuna relazione** tra i dati.
+
+Se si desidera invece un'operazione **relazionale**, usare `left_join()` e funzioni simili. **NOTA**: noi usiamo solo `left_join()`, ma vale la pena guardare l'help anche di `right_join()`, `inner_join()` e `full_join()`.
+
+```{r}
+# ad esempio vogliamo tradurre i nomi dei colori capelli
+# 1. elenchiamo i colori unici
+starwars %>% pull(hair_color) %>% unique()
+# 2. creiamo una tabella di traduzione
+hc <- tibble(
+  colors = starwars %>% pull(hair_color) %>% unique(),
+  colori = c("biondo", NA, "nessuno", "castano", "castano, grigio", "nero", "ramato, bianco", "ramato, grigio", "bianco", "grigio", "ramato", "biondo")
+)
+# 3. inner_join
+starwars %>% 
+  select(name:hair_color) %>% 
+  left_join(hc, by=join_by(hair_color == colors)) %>% 
+  select(!hair_color) %>% 
+  na.omit() %>% 
+  slice_head(n=5)
+```
+
+
+### Rendere tabelle *tidy*
+
+Una tabella è tidy quando ogni variabile è su un'unica colonna, ogni osservazione è su un'unica riga. Questo tipo di tabella è chiamata **lunga**.
+
+Al contrario, una tabella **larga** riporta la stessa variabile su diverse colonne, ciascuna per condizioni diverse. Una tabella larga è più facile da visualizzare e più compatta, ma è scomoda da manipolare e plottare.
+
+Ad esempio, `population` è in formato lungo:
+
+```{r}
+population %>% 
+  filter(year %in% 1995:1996) %>% 
+  slice_head(n=6)
+```
+
+Per renderla larga usiamo `pivot_wider()`:
+
+```{r}
+(pop_wide <- population %>% 
+  pivot_wider(names_from = year, values_from = population))
+```
+
+L'operazione opposta è con `pivot_longer()`:
+
+```{r}
+pop_wide %>% 
+  pivot_longer(!country, names_to = "year", values_to = "population") %>% 
+  # calcoliamo la variazione di popolazione per ogni Paese
+  group_by(country) %>% 
+  summarise(change=diff(range(population))) %>% 
+  # selezioniamo i 20 Paesi con la maggior variazione
+  arrange(desc(change)) %>% 
+  slice_head(n=20) %>% 
+  # Grafico a barre
+  ggplot(aes(x=factor(country, levels=country[order(change)]), y=change)) +
+  geom_col() +
+  theme(axis.text.x = element_text(angle=90, hjust=1, vjust=0.5)) +
+  labs(
+    x="Paese", 
+    y="Variazione di popolazione",
+    title=glue("Variazione di popolazione {min(population$year)} - {max(population$year)}")    
+  )
+```
+
+## Libreria `purrr`
+
+Le funzioni della libreria `purrr` servono a sostituire un ciclo (`for` o `while`) in una chiamata a funzione. i vantaggi sono:
+
+* spesso la funzione è più veloce
+* la funzione può essere usata laddove ho bisogno di un'**operazione vettorializzata** su una colonna di una tabella, come ad esempio in `summarise()` o in `mutate()`.
+
+Le funzioni più comuni sono della famiglia `map`:
+
+* `map()` opera su una lista o su un vettore e **restituisce sempre una lista**
+* `map_<tipo>()` operano su una lista o un vettore e **restutuiscono un vettore di tipo `<tipo>`**
+
+Se serve una funzione che lavora su 2 vettori della stessa lunghezza, usare le funzioni `map2*`; se serve operare su più vettori, usare `pmap*`.
+
+```{r}
+starwars %>% 
+  mutate(
+    body = paste(height, "cm x", mass, "kg")
+  )
+```
+
+
+```{r}
+starwars %>% 
+  mutate(
+    body = map2_chr(height, mass, function(h, m) paste(h, "cm,", m, "kg")),
+    .after = name
+  ) %>% slice_head(n=1)
+
+# più in breve:
+starwars %>% 
+  mutate(
+    body = map2_chr(height, mass, \(h, m) paste(h, "cm,", m, "kg")),
+    .after = name
+  ) %>% slice_head(n=1)
+
+# ancora più in breve:
+starwars %>% 
+  mutate(
+    body = map2_chr(height, mass, ~ paste(.x, "cm,", .y, "kg")),
+    .after = name
+  ) %>% slice_head(n=1)
+```
+
+Però gran parte delle funzioni (`paste()` inclusa) sono già vettorializzate:
+
+```{r}
+starwars %>% 
+  mutate(
+    body = paste(height, "cm,", mass, "kg"),
+    .after = name
+  ) %>% slice_head(n=1)
+```
+
+Vediamo un caso in cui è veramente utile:
+
+```{r}
+
+```
+
+
+
+## *p-value* e intervalli di confidenza
+
+Il *p-value* è la probabilità di errore nel rifiutare l'ipotesi nulla. In qualsiasi test d'inferenza, l'ipotesi nulla è quella di **non-significatività**. Quindi, un *p-value* piccolo consente di rigettare l'ipotesi nulla, e viceversa, quale che sia il test.
+
+Ad esempio, il T-test verifica l'ipotesi che un dato campione provenga da una popolazione con un valore atteso (incognito) significativamente differente da un valore assegnato $\mu_0$:
+
+```{r}
+set.seed(1)
+(tt <- t.test(rnorm(10), mu=1))
+```
+
+Il basso valore `r tt$p.value` del *p-value* suggerisce che il valore atteso del campione sia diverso da `r tt$null.value`.
+
+Si noti che ogni test restituisce un oggetto che contiene implicitamente tutte le informazioni fornite nell'output. Per elencare le informazioni disponibili: 
+
+```{r}
+tt %>% attributes()
+```
+
+Altrettanto, il test di Shapiro-Wilk è un test di normalità, quindi l'ipotesi nulla è che il campione sia normale:
+
+```{r}
+shapiro.test(runif(100))
+```
+
+L'**intervallo di confidenza** è l'intervallo all'interno del quale rientra un certo parametro ignoto con una probabilità assegnata.
+
+Ad esempio, nel caso del Test di Student è l'intervallo, centrato sulla media del campione, all'interno del quale cade il valore atteso con una probabilità assegnata. Nel caso:
+
+```{r}
+tt
+```
+
+Il fatto che $\mu_0=1$ stia all'esterno dell'intervallo di confidenza al 95% corrisponde al fatto che l'ipotesi nulla possa essere rifiutata con una probabilità d'errore minore del 5%. Se il *p-value* fosse esattamente pari a 5%, $\mu_0$ cadrebbe esattamente su uno dei due estremi dell'intervallo di confidenza.
+
+L'**intervallo di predizione**, invece, è l'intervallo che contiene una certa percentuale (diciamo il 95%) delle osservazioni, ed è calcolata con i quantili, data media e deviazione standard del campione:
+
+```{r}
+alpha <- 0.05
+v <- rnorm(50)
+m <- mean(v)
+s <- sd(v)
+(pred_i <- qnorm(c(alpha/2, 1-alpha/2), lower.tail = T))
+```
+
+Cioè il 95% delle osservazioni cade (e cadrà) in questo intervallo:
+
+```{r}
+tibble(i=seq_along(v), x=v) %>% 
+  ggplot(aes(x=i, y=v)) +
+  geom_point() +
+  geom_hline(yintercept=pred_i, color="red", linetype=2) +
+  geom_hline(yintercept = quantile(v, probs=c(alpha/2, 1-alpha/2)), color="blue", linetype=3)
+```
+
+Finiamo con un esempio che integra quanto sopra: vogliamo calcolare massa media e intervallo di confidenza sulla massa per ogni specie (con almeno tre rappresentanti) dei personaggi della tabella `starwars`, 
+
+```{r}
+starwars %>% 
+  group_by(species) %>%
+  filter(n() > 2, !is.na(mass)) %>% # filter lavora per gruppi!
+  select(species, mass) %>% 
+  summarise(
+    n=n(),
+    ci = list(t.test(mass)$conf.int), # la colonna ci contiene una lista di due elementi!
+    mean=mean(mass),
+    .groups="keep"
+  ) %>% 
+  # hoist() serve a estrarre dalla colonna lista gli elementi 1 e 2 con due nuovi nomi
+  hoist(ci, lwr=1, upr=2) %>% 
+  relocate(mean, .after=lwr)
+```
+
+## Quantili
+
+Vedi sopra per il significato
+
+Per il ggplot:
+
+```{r}
+tibble(
+  i=1:100,
+  x=rnorm(100)
+) %>% 
+  ggplot(aes(sample=x)) +
+  geom_qq() +
+  geom_qq_line()
+```
+
+
+## ANOVA
+
+Vedi Parte 6 su *Design of Experiments*.
+
+## Esempio su tabella `income`
+
+La domanda deve essere più specifica.
+
+---
+
+# Parte 3
+
+Domande ricevute:
+
+> * Analisi dei residui
+> * Regressione lineare
+> * Regressione lineare generalizzata
+> * Regressione non lineare
+
+Le domande devono essere più specifiche.
+
+---
+
+# Parte 4
+
+Domande ricevute:
+
+> * Intervalli e bande di confidenza --> sarebbe utile ripetere la teoria (la differenza tra banda di predizione e banda di confidenza) e la relativa rappresentazione su ggplot
+> * Bootstrap
+
+Le domande devono essere più specifiche.
