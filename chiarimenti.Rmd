@@ -221,16 +221,10 @@ Le funzioni più comuni sono della famiglia `map`:
 
 Se serve una funzione che lavora su 2 vettori della stessa lunghezza, usare le funzioni `map2*`; se serve operare su più vettori, usare `pmap*`.
 
-```{r}
-starwars %>% 
-  mutate(
-    body = paste(height, "cm x", mass, "kg")
-  )
-```
-
 
 ```{r}
 starwars %>% 
+  select(name:mass) %>% 
   mutate(
     body = map2_chr(height, mass, function(h, m) paste(h, "cm,", m, "kg")),
     .after = name
@@ -238,6 +232,7 @@ starwars %>%
 
 # più in breve:
 starwars %>% 
+  select(name:mass) %>% 
   mutate(
     body = map2_chr(height, mass, \(h, m) paste(h, "cm,", m, "kg")),
     .after = name
@@ -245,6 +240,7 @@ starwars %>%
 
 # ancora più in breve:
 starwars %>% 
+  select(name:mass) %>% 
   mutate(
     body = map2_chr(height, mass, ~ paste(.x, "cm,", .y, "kg")),
     .after = name
@@ -254,17 +250,70 @@ starwars %>%
 Però gran parte delle funzioni (`paste()` inclusa) sono già vettorializzate:
 
 ```{r}
-starwars %>% 
+starwars %>%
+  select(name:mass) %>% 
   mutate(
     body = paste(height, "cm,", mass, "kg"),
     .after = name
   ) %>% slice_head(n=1)
 ```
 
-Vediamo un caso in cui è veramente utile:
+Vediamo un caso in cui è veramente utile: quando una struttura dati è complicata, come ad esempio la colonna `films` di `starwars`, che contiene liste di stringhe. 
+
+Supponiamo di voler contare il numero di film in cui compare ciascun personaggio:
 
 ```{r}
+starwars %>% 
+  select(name, films) %>% 
+  mutate(films = length(films)) %>% 
+  slice_head(n=5)
+```
 
+Come si vede, il risultato è sbagliato, perché restituisce la dimensione della colonna films, cioè il suo numero di righe. Risolviamo il problema con `purrr`:
+
+```{r}
+starwars %>% 
+  select(name, films) %>% 
+  mutate(
+    n_films = map_int(films, ~ length(.))
+  ) %>% 
+  slice_head(n=5)
+```
+
+Se invece volessimo creare una colonna con un'unica sequenza di film in una stringa sola, dobbiamo iterare due volte:
+
+1. iteriamo sui film con `map_chr` (perché vogliamo ottenere una stringa)
+2. all'interno di `map_chr`, da ogni lista di film dobbiamo ottenere una sola stringa. Questo si può ottenere con la funzione `reduce()`, che *riduce* una lista ad un unico valore, accumulandone gli elementi.
+
+La funzione `reduce()` opera su una lista; passa ogni elemento della lista ad una funzione anonima con due argomenti: il primo argomento è un accumulatore, il secondo è l'*i*-esimo elemento della lista. Alla fine dell'iterazione viene restituito l'accumulatore.
+
+```{r}
+starwars %>% 
+  select(name, films) %>% 
+  mutate(
+    films_n = map_int(films, \(f) length(f)),
+    films = map_chr(films, \(f) reduce(f, \(accum, value) paste0(accum, "; ", value)))
+    #       ↑                   ↑
+    #       |                   |_ Loop interno: accumula gli elementi della lista
+    #       |_____________________ Loop esterno: esegue l'accumulazione su ogni riga
+  ) %>% 
+  arrange(desc(films_n)) %>% 
+  relocate(films_n, .after=name) %>% 
+  slice_head(n=5)
+```
+
+Usando le funzioni abbreviate di `purrr`:
+
+```{r}
+starwars %>% 
+  select(name, films) %>% 
+  mutate(
+    films_n = map_int(films, ~ length(.)),
+    films = map_chr(films, ~ reduce(., ~ paste0(.x, "; ", .y)))
+  ) %>% 
+  arrange(desc(films_n)) %>% 
+  relocate(films_n, .after=name) %>% 
+  slice_head(n=5)
 ```
 
 
@@ -311,7 +360,7 @@ alpha <- 0.05
 v <- rnorm(50)
 m <- mean(v)
 s <- sd(v)
-(pred_i <- qnorm(c(alpha/2, 1-alpha/2), lower.tail = T))
+(pred_i <- qnorm(c(alpha/2, 1-alpha/2), m, s, lower.tail = T))
 ```
 
 Cioè il 95% delle osservazioni cade (e cadrà) in questo intervallo:
@@ -323,6 +372,8 @@ tibble(i=seq_along(v), x=v) %>%
   geom_hline(yintercept=pred_i, color="red", linetype=2) +
   geom_hline(yintercept = quantile(v, probs=c(alpha/2, 1-alpha/2)), color="blue", linetype=3)
 ```
+
+Nell'ultimo grafico abbiamo riportato sia i *quantili teorici* della distribuzione normale (in rosso), sia i *quantili campionari* (in blu), cioè i valori che sono rispettivamente superiori al 2.5% delle osservazioni e al 97.5% delle osservazioni.
 
 Finiamo con un esempio che integra quanto sopra: vogliamo calcolare massa media e intervallo di confidenza sulla massa per ogni specie (con almeno tre rappresentanti) dei personaggi della tabella `starwars`, 
 
@@ -358,10 +409,28 @@ tibble(
   geom_qq_line()
 ```
 
+## Intervalli di confidenza con `ggplot`
+
+Gli intervalli di confidenza per un modello possono essere visualizzati in ggplot con la geometria `geom_smoot()`:
+
+```{r}
+tibble(
+  x = seq(1, 10, 0.1),
+  y = 2*x + 0.5*x^2 + rnorm(length(x), sd=5)
+) %>% 
+  ggplot(aes(x=x, y=y)) + 
+  geom_point() +
+  geom_smooth(method="lm", formula=y~poly(x, 2, raw=T), level=0.999)
+```
+
+
 
 ## ANOVA
 
 Vedi Parte 6 su *Design of Experiments*.
+
+La domanda deve essere più specifica.
+
 
 ## Esempio su tabella `income`
 
