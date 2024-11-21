@@ -51,3 +51,6 @@ rsconnect/
 *.nb.html
 *.html
 *.pdf
+*.log
+
+!/unitn_logo.pdf
