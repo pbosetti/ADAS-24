@@ -700,7 +700,7 @@ I residui tendono ad allargarsi con il valore predetto, quindi è opportuno veri
 car::boxCox(dm.lm)
 ```
 
-Il valore di $\lambda$ è vicino a -0.5, cioè l'inverso della radice $y^*=1/\sqrt(y)$:
+Il valore di $\lambda$ è vicino a -0.5, cioè l'inverso della radice: $y^*=1/\sqrt{y}$:
 
 ```{r}
 dm.lm <- lm(1/sqrt(Y)~A*C+A*D, data=dm)
