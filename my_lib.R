@@ -1,5 +1,6 @@
 # In questo script definiamo funzioni di uso comune durante il corso.
 require(glue)
+require(tidiverse)
 
 example_url <- function(example) {
   url = paste0("https://paolobosetti.quarto.pub/data/", example)
@@ -23,4 +24,14 @@ chauvenet <- function(x, threshold=0.5) {
   print(glue("Expected frequency: {freq}, threshold: {threshold}"))
   print(glue("Decision: {d}", d=ifelse(result$reject, "reject it", "keep it")))
   invisible(result)
+}
+
+
+# Funzione per plottare i residui di un modello
+# t è una tabella
+# n è il nome di una colonna da usare come ascissa
+resid_plot <- function(t, n) {
+  t %>% 
+    ggplot(aes(x={{n}}, y=resid)) +
+    geom_point()
 }

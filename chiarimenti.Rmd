@@ -31,7 +31,7 @@ knitr::opts_chunk$set(
 Domande ricevute:
 
 > * Come ordinare le tabelle --> pivot_longer, aggreagate, group_by, left_joint e tutte le funzioni collegate. E' complicato capire cosa si sta effetivamente facendo. 
-> * Intervalli di confidenza --> come crearli corretamente con ggplot
+> * Intervalli di confidenza --> come crearli correttamente con ggplot
 > * Esercizio income religioni --> mi risulta particolarmente difficile comprendere l'esercizio svolto sulla creazione di grafici a barre per la tibble Religion_income
 > * Quantile --> cosa rappresenta il quantile e come si rappresenta un grafico Q-Q su ggplot
 > * Libreria dplyr
@@ -91,8 +91,8 @@ Raggruppiamo le osservazioni per variabili con uguale valore, poi applichiamo un
 # .groups="keep", cioè "mantieni i gruppi definiti nel passaggio precedente
 starwars %>% 
   group_by(species, sex) %>% 
-  summarise(height=median(height), number=n(), .groups="keep") %>% 
-  filter(number > 1)
+  summarise(height=median(height), count=n(), .groups="keep") %>% 
+  filter(count > 1)
 ```
 
 Come **statistiche** si possono usare tutte le funzioni statistiche di base (`mean`, `var`, `sd`, `median`, `quantile`, `min`, `max`, ...), cioè tutte le funzioni che da un vettore producono uno scalare. In generale va bene una qualsiasi **espressione di lunghezza 1**. 
@@ -154,7 +154,7 @@ hc <- tibble(
   colors = starwars %>% pull(hair_color) %>% unique(),
   colori = c("biondo", NA, "nessuno", "castano", "castano, grigio", "nero", "ramato, bianco", "ramato, grigio", "bianco", "grigio", "ramato", "biondo")
 )
-# 3. inner_join
+# 3. left_join
 starwars %>% 
   select(name:hair_color) %>% 
   left_join(hc, by=join_by(hair_color == colors)) %>% 
@@ -197,7 +197,7 @@ pop_wide %>%
   arrange(desc(change)) %>% 
   slice_head(n=20) %>% 
   # Grafico a barre
-  ggplot(aes(x=factor(country, levels=country[order(change)]), y=change)) +
+  ggplot(aes(x=factor(country, levels=country[order(change, decreasing=TRUE)]), y=change)) +
   geom_col() +
   theme(axis.text.x = element_text(angle=90, hjust=1, vjust=0.5)) +
   labs(
@@ -209,7 +209,7 @@ pop_wide %>%
 
 ## Libreria `purrr`
 
-Le funzioni della libreria `purrr` servono a sostituire un ciclo (`for` o `while`) in una chiamata a funzione. i vantaggi sono:
+Le funzioni della libreria `purrr` servono a sostituire un ciclo (`for` o `while`) in una chiamata a funzione. I vantaggi sono:
 
 * spesso la funzione è più veloce
 * la funzione può essere usata laddove ho bisogno di un'**operazione vettorializzata** su una colonna di una tabella, come ad esempio in `summarise()` o in `mutate()`.
@@ -229,7 +229,10 @@ starwars %>%
     body = map2_chr(height, mass, function(h, m) paste(h, "cm,", m, "kg")),
     .after = name
   ) %>% slice_head(n=1)
+```
 
+
+```{r}
 # più in breve:
 starwars %>% 
   select(name:mass) %>% 
