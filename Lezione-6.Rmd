@@ -17,6 +17,8 @@ library(modelr)
 library(boot)
 library(patchwork)
 library(PearsonDS)
+library(gghalfnorm)
+library(adas.utils)
 source("my_lib.R")
 
 knitr::opts_chunk$set(
@@ -533,8 +535,6 @@ tibble(
 Più rapidamente, posso usare la libreria `gghalfnorm` (da installare):
 
 ```{r}
-library(gghalfnorm)
-
 df.lm %>% 
   effects() %>% 
   tail(-1) %>% 
@@ -696,7 +696,7 @@ dm %>%
 
 I residui tendono ad allargarsi con il valore predetto, quindi è opportuno verificare se c'è una trasformazione Box-Cox adatta:
 
-```{r}
+```{r warning=FALSE}
 car::boxCox(dm.lm)
 ```
 
@@ -764,7 +764,7 @@ pareto_chart(lm(Y~A*B*C*D, data=dm))
 
 Si osserva che la curva cumulata ha un ginocchio pronunciato al di sopra dei primi 5 effetti che sono quelli statisticamente significativi. In ogni caso, i primi 5 effetti sono responsabili del 80% del contributo sul modello completo; nel modello ridotto agli effetti significativi (quello adottato per i grafici di interazione), il 70% della resa è governato dai fattori `A`, `C` e dalla loro interazione. In altre parole, la velocità di filtrazione è governata principalmente da temperatura e concentrazione.
 
-Quindi realizziamo i grafici di interazione tra `A` e `C`, sfaccettati per `D`:
+Quindi realizziamo i grafici di interazione tra `A` e `C`, sfaccettati per `D`, ricordandoci di anti-trasformare le predizioni (aggiunte con `add_predictions`):
 
 ```{r}
 dm %>% 
@@ -788,3 +788,219 @@ Possiamo interpretarli come segue:
 * se la concentrazione è alta ma la velocità di agitazione è anche alta, viene evitata la saturazione del filtro, e la velocità di filtrazione in generale ne guadagna, anche aumentando la temperatura.
 
 Secondo logica, la differenza di pressione dovrebbe avere un effetto, ma l'analisi della varianza lo smentisce. In realtà, ciò non significa che la differenza di pressione non abbia effetto sulla velocità di filtrazione in assoluto, ma piuttosto che **per l'intervallo di pressione in oggetto** la variazione di velocità risultante non è statisticamente significativa.
+
+
+
+## Filtrazione: CCD
+
+Il modello sopra descritto per l'impianto di filtrazione è un modello di primo grado in tutti i fattori. Avendo solo due livelli per fattore è evidente che non è possibile stimare alcun effetto di grado superiore al primo.
+
+Per verificare se sia necessario indagare una **curvatura della superficie di risposta** possiamo **aumentare** il piano fattoriale con un trattamento centrale, cioè la combinazione in cui tutti i fattori di interesse sono a livello 0 in unità codificate. Questo trattamento deve essere in genere ripetuto alcune volte. 
+
+Nel nostro caso ripetiamo il trattamento centrale 5 volte, aggiungendo i valori al data frame originale:
+
+```{r}
+n <- rep(0, 5)
+dm.c <- tibble(
+  A = n,
+  C = n,
+  D = n,
+  Y = c(91, 90, 90, 89, 91)
+)
+
+dm.c <- dm %>% bind_rows(dm.c)
+
+dm.c
+```
+
+Ora al modello `Y~A*C+A*D` ricavato sopra aggiungiamo il quadrato **di uno qualsiasi dei tre fattori**:
+
+```{r}
+dm.lmq <- lm(Y~A*C+A*D + I(C^2), data=dm.c)
+anova(dm.lmq)
+```
+
+Il termine quadratico `I(C^2)` risulta significativo, quindi la superficie di risposta è convessa e richiede un modello lineare (almeno) di secondo grado. Si noti che il trattamento zero ovviamente mi permette solo di capire **se c'è convessità**, ma non a quale (o a quali) dei fattori è dovuta questa convessità: per saperlo, dovremmo aggiungere anche i trattamenti assiali e valutare un modello in cui tutti i fattori compaiono al quadrato.
+
+Per brevità saltiamo questo passo, che sarebbe equivalente all'analisi del piano fattoriale $3^2$ visto sopra per la vita di un utensile.
+
+Visualizziamo invece i nuovi punti sul grafico di interazione: si nota come si trovino più in alto (punti verdi) rispetto al valore predetto dal modello quando tutti i fattori sono a 0, cioè un valore di circa 67 (punto nero).
+
+```{r}
+dm.c %>% 
+  add_predictions(dm.lm) %>% 
+  ggplot(aes(x=A, y=1/pred^2, linetype=factor(C))) +
+  geom_line() +
+  geom_point() +
+  geom_point(aes(y=Y, color=factor(C))) +
+  facet_wrap(~D)
+```
+
+
+# Piano fattoriale frazionato
+
+Studiamo un processo di **litografia di circuiti stampati**, dipendente da 5 parametri:
+
+* A: rapporto focale dell'ottica
+* B: tempo di esposizione
+* C: tempo di sviluppo del fotoresist
+* D: Parametro di dimensione della maschera
+* E: tempo di attacco chimico
+* Y: resa quantitativa del processo
+
+Per limitare il numero di prove realizziamo un piano fattoriale frazionato una volta, cioè $2^{5-1}$ non ripetuto, con relazione definente $I=ABCDE$.
+
+Dalla relazione definente possiamo calcolare i segni del quinto fattore `E`, cioè $E=ABCD$.
+
+```{r}
+l <- c(-1,1)
+
+dm <- expand.grid(
+  A=l, B=l, C=l, D=l
+) %>% 
+  mutate(
+    E = A*B*C*D,
+    Y = c(
+      8, 9, 34, 52,
+      16, 22, 45, 60,
+      6, 10, 30, 50, 
+      15, 21, 44, 63
+    )
+  )
+
+sum(dm$Y)
+```
+
+Dato che il piano fattoriale non è replicato, dobbiamo applicare il metodo di Daniel:
+
+```{r}
+dm %>% 
+  lm(Y~A*B*C*D*E, data=.) %>% 
+  effects() %>% 
+  tail(-1) %>% 
+  gghalfnorm(labs=names(.), nlab=10)
+```
+
+Cautelativamente eliminiamo solo i fattori `D` e `E`:
+
+```{r}
+lm(Y~A*B*C, data=dm) %>% anova()
+```
+
+Possiamo raffinare ulteriormente il modello:
+
+```{r}
+df.lm <- lm(Y~A*B+C, data=dm)
+anova(df.lm)
+```
+
+Possiamo valutare la relativa importanza degli effetti con un diagramma di Pareto:
+
+```{r}
+pareto_chart(df.lm)
+```
+
+**ESERCIZIO**: Sulla base del diagramma di Pareto, realizzare gli opportuni grafici di interazione.
+
+
+# Impianto di filtrazione v.2
+
+Richiamiamo la stessa design matrix sopra definita per l'impianto di filtrazione, un piano fattoriale $2^4$:
+
+```{r}
+lvl <- c(-1,1)
+dm <- expand.grid(
+  A=lvl, B=lvl, C=lvl, D=lvl
+) %>% 
+  mutate(
+    Y=c(
+      45, 71, 48, 65,
+      68, 60, 80, 65,
+      43, 100, 45, 104,
+      75, 86, 70, 96
+    )
+  )
+
+dm$Y %>% sum()
+```
+
+Facciamo ora finta che sia stato invece realizzato un piano fattoriale frazionato $2^{4-1}$, con relazione $I=ABCD$. Ci basta quindi tenere solo metà della tabella, cioè solo le righe in cui vale la relazione definente, ri-arrangiata come $D=ABC$:
+
+```{r}
+dmf <- dm %>% 
+  filter(
+    D == A*B*C
+  )
+
+dmf
+```
+
+Non avendo repliche proviamo ad applicare il metodo di Daniel:
+
+```{r}
+dmf %>% 
+  lm(Y~A*B*C*D, data=.) %>% 
+  effects() %>% 
+  tail(-1) %>% 
+  gghalfnorm(labs=names(.), nlab=5)
+```
+
+Dato che i punti sono pochi, il grafico risulta poco chiaro. In questi casi è più utile il diagramma di Pareto:
+
+```{r}
+dmf %>% 
+  lm(Y~A*B*C*D, data=.) %>% 
+  pareto_chart()
+```
+Osserviamo che:
+
+* gli effetti `A`, `C` e `D` sono cospicui, dato che è poco probabile che lo siano anche le interazioni in alias `BCD`, `ABD` e `ABC`
+* l'effetto `AB+CD` è trascurabile, a meno che `AB` e `CD` siano entrambi grandi ma di segno inverso, il che è poco probabile
+* `BC` è in alias con `AD`
+* dato che `A`, `C` e `D` sono cospicui, possiamo aspettarci che lo siano `AC` e `AD`, piuttosto che `BC` e `BD`
+
+Quindi rivediamo il modello come:
+
+```{r}
+dmf.lm <- lm(Y~A*C+A*D, data=dmf)
+anova(dmf.lm)
+```
+
+Anche in questo caso frazionato, Box-Cox suggerisce una trasformazione $y^*=1/\sqrt{y}$:
+
+```{r}
+car::boxCox(dmf.lm)
+```
+
+```{r}
+dmf.lm <- lm(1/sqrt(Y)~A*C+A*D, data=dmf)
+```
+
+
+I grafici di interazione sono quindi:
+
+```{r}
+dmf %>% 
+  add_predictions(dmf.lm) %>% 
+  ggplot(aes(x=A, y=1/pred^2, linetype=factor(C))) +
+  geom_line() +
+  geom_point(aes(y=Y, color=factor(C))) +
+  geom_point() +
+  facet_wrap(~D) +
+  ylim(c(25, 105))
+```
+
+che risultano in buon accordo con il modello completo, nonostante siano stati ricavati con la metà delle informazioni:
+
+```{r}
+dm %>% 
+  add_predictions(lm(1/sqrt(Y)~A*C+A*D, data=.)) %>% 
+  ggplot(aes(x=A, y=1/pred^2, linetype=factor(C), group=factor(C))) +
+  geom_line() + 
+  geom_point(aes(y=Y, color=factor(C))) +
+  geom_point() +
+  facet_wrap(~D, labeller=label_both) +
+  ylim(c(25, 105))
+```
+
+**ESERCIZIO**: confrontare su un'unica coppia di grafici di interazione i due modelli ottenuti dal piano fattoriale completo e da quello frazionato, usando colori diversi per le linee dei due casi. Suggerimento: usare `pivot_longer()`.
