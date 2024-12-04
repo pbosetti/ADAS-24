@@ -1109,4 +1109,24 @@ dm %>%
   ylim(c(25, 105)) +
   labs(color="model", linetype="C", y="predizione")
 ```
+> (*Tema avanzato*) In alternativa, posso usare `facet_grid()` e sfaccettare C e tipo di modello in righe e colonne di una griglia di grafici:
 
+```{r}
+dm %>% 
+  add_predictions(lm(1/sqrt(Y)~A*C+A*D, data=.), var="full") %>%
+  add_predictions(dmf.lm, data=., var="half") %>%
+  pivot_longer(-(A:Y), names_to = "model", values_to = "pred") %>% 
+  ggplot(aes(x=A, y=1/pred^2, linetype=factor(C))) +
+  geom_line() + 
+  geom_point() +
+  facet_grid( # Metti i grafici in griglia righe/colonne
+    D~model,  # D sulle righe, model sulle colonne della griglia di grafici  
+    labeller=labeller( # Solo un esempio per come personalizzare le etichette
+      D = c(`-1`="Vel. agitazione = -1", `1`="Vel. agitazione = 1"),
+      model = c(`full`="Modello completo", `half`="Modello frazionato")
+    )
+  ) +
+  labs(x="Temperatura", 
+       y="Velocità di filtrazione", 
+       linetype="Concentrazione")
+```
