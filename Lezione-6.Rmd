@@ -406,7 +406,19 @@ car::boxCox(df.lm, lambda=seq(-2, 4, 0.1))
 
 Dato che non serve nessuna trasformazione, possiamo procedere con la verifica di adeguatezza del modello.
 
-**Esercizio**: Eseguire la verifica di adeguatezza.
+> **Esercizio**: Eseguire la verifica di adeguatezza.
+
+```{r}
+df %>% 
+  add_residuals(df.lm) %>% 
+  add_predictions(df.lm) %>% {
+    (resid_plot(., RunOrder) + resid_plot(., A)) /
+    (resid_plot(., C) + resid_plot(., pred))
+  }
+```
+
+> Si osserva un pattern per l'ordine di esecuzione delle prove e per i valori predetti. È quindi possibile che la variazione di condizioni ambientali durante l'esecuzione delle prove abbia influito sui risultati. Come già visto, Box-Cox non suggerisce una revisione del modello, quindi l'unica soluzione sarebbe indagare sulle condizioni embientali e, eventualmente, ripetere la campagna in condizioni più stabili.
+
 
 Infine possiamo realizzare la superficie di risposta:
 
@@ -435,8 +447,23 @@ expand.grid(
   scale_fill_viridis_c()
 ```
 
-**Esercizio**: realizzare i grafici di interazione.
+> **Esercizio**: realizzare i grafici di interazione.
 
+```{r}
+df %>% 
+  mutate(Cf=factor(C)) %>% 
+  add_predictions(df.lm) %>% 
+  ggplot(aes(x=A, y=pred, linetype=Cf)) +
+  geom_line() +
+  geom_point() +
+  geom_point(aes(y=Y, color=Cf)) +
+  labs(
+    x="Temperatura",
+    y="vel. filtrazione (l/min)", 
+    color="Conc.", linetype="Conc.")
+```
+
+> Il grafico di interazione è una visualizzazione alternativa della superficie di risposta, che riporta le due sezioni di essa corrispondenti al bordo inferiore e superiore del grafico a contorno della superficie di risposta stessa.
 
 # Misure ripetute
 
@@ -556,7 +583,37 @@ anova(df.lm)
 df.lm <- lm(t~A*B+A*C, data=df)
 anova(df.lm)
 ```
-**Esercizio**: verificare l'adeguatezza del modello
+> **Esercizio**: verificare l'adeguatezza del modello
+
+```{r fig.dim=c(5,5)*1.2}
+df %>% 
+  add_residuals(df.lm) %>% 
+  add_predictions(df.lm) %>% {
+    (resid_plot(., RunOrder) + resid_plot(., A)) /
+    (resid_plot(., B) + resid_plot(., C)) /
+      resid_plot(., pred)
+  }
+```
+
+> Sembra evidente un patten nei valori predetti, quindi proviamo ad applicare Box-Cox:
+
+```{r}
+car::boxCox(df.lm, lambda=seq(-1, 10, 0.1))
+```
+
+> Ri-controllando i residui, tuttavia, la situazione non migliora molto:
+
+```{r fig.dim=c(5,5)*1.2}
+df %>% 
+  add_residuals(lm(t^6~A*B+A*C, data=.)) %>% 
+  add_predictions(lm(t^6~A*B+A*C, data=.)) %>% {
+    (resid_plot(., RunOrder) + resid_plot(., A)) /
+    (resid_plot(., B) + resid_plot(., C)) /
+      resid_plot(., pred^(1/6))
+  }
+```
+
+> In effetti, più che un pattern osserviamo una marcata differenza dei residui in corrispondenza del valore minimo predetto (attorno a 380 $\m$m), che corrisponde poi ad una maggior distribuzione dei residui quando il fattore $ (Temperatura) è al livello -1. Più che ad un modello non adeguato, quindi, concludiamo che quando la temperatura è bassa il processo ha una maggior variabilità (e una minor resa). Dato che $A$ è il fattore più influente, le cose sono collegate. Quindi adottiamo come corretto il modello `t~A*B+A*C`.
 
 Possiamo finalmente produrre la superficie di risposta, usando il solito metodo. Rispetto al primo esempio, siccome abbiamo un fattore in più, calcoliamo le superfici di risposta per i due fattori più importanti `A` e `B`, e sfaccettiamo i grafici per 6 livelli di `C`.
 
@@ -626,7 +683,7 @@ rs %>%
   geom_contour(breaks =1.4, color="orange") +
   metR::geom_label_contour(aes(z=t)) +
   facet_wrap(~Cf) +
-  labs(fill="varianza")
+  labs(fill="Dev. std.")
 ```
 
 Quindi, le zone comprese tra le curve rosse e al di sopra di quella arancio rappresentano il **dominio operativo dei parametri**: cioè il processo va mantenuto all'interno di questo dominio per rispettare i requisiti sullo spessore e sulla varianza dello spessore dell'ossido di Silicio.
@@ -719,7 +776,7 @@ dm %>%
 
 Il modello sembra sensibilmente più adatto, quindi lo accettiamo definitivamente.
 
-Ci restano da realizzare i grafici di interazione (o la superficie di risposta, lasciata per esercizio). Per decidere come organizzare questi grafici è utile analizzare quali fattori hanno l'effetto maggiore.
+Ci restano da realizzare i grafici di interazione (o la superficie di risposta, lasciata per esercizio, vedi soluzione a fine sezione). Per decidere come organizzare questi grafici è utile analizzare quali fattori hanno l'effetto maggiore.
 
 In questi casi è utile ordinare gli effetti dei fattori e delle interazioni in ordine decrescente per meglio valutarne l'importanza in modo da sapere su quali fattori conviene intervenire per avere il massimo guadagno sulla resa. Questo tipo di analisi può essere condotta efficacemente con il [diagramma di Pareto](https://it.wikipedia.org/wiki/Diagramma_di_Pareto), che riporta come barre il valore assoluto degli effetti (ordinati in modo decrescente) e come linea spezzata il peso cumulato degli effetti. Questo grafico consente di fare affermazioni del tipo "i primi $n$ termini pesano per l'80% del totale". 
 
@@ -788,6 +845,25 @@ Possiamo interpretarli come segue:
 * se la concentrazione è alta ma la velocità di agitazione è anche alta, viene evitata la saturazione del filtro, e la velocità di filtrazione in generale ne guadagna, anche aumentando la temperatura.
 
 Secondo logica, la differenza di pressione dovrebbe avere un effetto, ma l'analisi della varianza lo smentisce. In realtà, ciò non significa che la differenza di pressione non abbia effetto sulla velocità di filtrazione in assoluto, ma piuttosto che **per l'intervallo di pressione in oggetto** la variazione di velocità risultante non è statisticamente significativa.
+
+> **Esercizio**: La superficie di risposta corrisponde alle curve di livello:
+
+```{r}
+rs <- expand.grid(
+  A = seq(-1, 1, length.out=50),
+  C = seq(-1, 1, length.out=50),
+  D = c(-1, 1)
+) %>% 
+  add_predictions(dm.lm)
+
+rs %>% 
+  ggplot(aes(x=A, y=C, z=1/pred^2)) + 
+  # geom_contour() +
+  metR::geom_contour_fill(bins=15) +
+  metR::geom_contour2(aes(label=(after_stat(level)) %>% round(2)), bins=15) +
+  facet_wrap(~factor(D)) +
+  scale_fill_viridis_c()
+```
 
 
 
@@ -890,17 +966,33 @@ lm(Y~A*B*C, data=dm) %>% anova()
 Possiamo raffinare ulteriormente il modello:
 
 ```{r}
-df.lm <- lm(Y~A*B+C, data=dm)
-anova(df.lm)
+dm.lm <- lm(Y~A*B+C, data=dm)
+anova(dm.lm)
 ```
 
 Possiamo valutare la relativa importanza degli effetti con un diagramma di Pareto:
 
 ```{r}
-pareto_chart(df.lm)
+pareto_chart(dm.lm)
 ```
 
-**ESERCIZIO**: Sulla base del diagramma di Pareto, realizzare gli opportuni grafici di interazione.
+> **ESERCIZIO**: Sulla base del diagramma di Pareto, realizzare gli opportuni grafici di interazione.
+
+```{r}
+dm %>% 
+  mutate(Af=factor(A), Cf=glue("Sviluppo: {C}")) %>% 
+  add_predictions(dm.lm) %>% 
+  ggplot(aes(x=B, y=pred, linetype=Af)) +
+  geom_line() +
+  geom_point() +
+  geom_point(aes(y=Y, color=Af)) +
+  facet_wrap(~Cf) +
+  labs(
+    x="Focale",
+    y="Resa", 
+    color="Esposizione", linetype="Esposizione")
+```
+
 
 
 # Impianto di filtrazione v.2
@@ -1003,4 +1095,21 @@ dm %>%
   ylim(c(25, 105))
 ```
 
-**ESERCIZIO**: confrontare su un'unica coppia di grafici di interazione i due modelli ottenuti dal piano fattoriale completo e da quello frazionato, usando colori diversi per le linee dei due casi. Suggerimento: usare `pivot_longer()`.
+> **ESERCIZIO**: confrontare su un'unica coppia di grafici di interazione i due modelli ottenuti dal piano fattoriale completo e da quello frazionato, usando colori diversi per le linee dei due casi. Suggerimento: usare `pivot_longer()`.
+
+```{r}
+dm %>% 
+  mutate(model="full") %>% 
+  add_predictions(lm(1/sqrt(Y)~A*C+A*D, data=.)) %>%
+  bind_rows(
+    dmf %>% mutate(model="half") %>% add_predictions(dmf.lm)
+  ) %>% 
+  ggplot(aes(x=A, y=1/pred^2, linetype=factor(C), color=factor(model))) +
+  geom_line() + 
+  # geom_point(aes(y=Y, color=factor(C))) +
+  geom_point() +
+  facet_wrap(~D, labeller=label_both) +
+  ylim(c(25, 105)) +
+  labs(color="model", linetype="C", y="predizione")
+```
+
