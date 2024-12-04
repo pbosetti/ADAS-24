@@ -613,7 +613,7 @@ df %>%
   }
 ```
 
-> In effetti, più che un pattern osserviamo una marcata differenza dei residui in corrispondenza del valore minimo predetto (attorno a 380 $\m$m), che corrisponde poi ad una maggior distribuzione dei residui quando il fattore $ (Temperatura) è al livello -1. Più che ad un modello non adeguato, quindi, concludiamo che quando la temperatura è bassa il processo ha una maggior variabilità (e una minor resa). Dato che $A$ è il fattore più influente, le cose sono collegate. Quindi adottiamo come corretto il modello `t~A*B+A*C`.
+> In effetti, più che un pattern osserviamo una marcata differenza dei residui in corrispondenza del valore minimo predetto (attorno a 380 $\mu$m), che corrisponde poi ad una maggior distribuzione dei residui quando il fattore $ (Temperatura) è al livello -1. Più che ad un modello non adeguato, quindi, concludiamo che quando la temperatura è bassa il processo ha una maggior variabilità (e una minor resa). Dato che $A$ è il fattore più influente, le cose sono collegate. Quindi adottiamo come corretto il modello `t~A*B+A*C`.
 
 Possiamo finalmente produrre la superficie di risposta, usando il solito metodo. Rispetto al primo esempio, siccome abbiamo un fattore in più, calcoliamo le superfici di risposta per i due fattori più importanti `A` e `B`, e sfaccettiamo i grafici per 6 livelli di `C`.
 
