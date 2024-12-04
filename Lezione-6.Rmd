@@ -1099,14 +1099,11 @@ dm %>%
 
 ```{r}
 dm %>% 
-  mutate(model="full") %>% 
-  add_predictions(lm(1/sqrt(Y)~A*C+A*D, data=.)) %>%
-  bind_rows(
-    dmf %>% mutate(model="half") %>% add_predictions(dmf.lm)
-  ) %>% 
+  add_predictions(lm(1/sqrt(Y)~A*C+A*D, data=.), var="full") %>%
+  add_predictions(dmf.lm, data=., var="half") %>%
+  pivot_longer(-(A:Y), names_to = "model", values_to = "pred") %>% 
   ggplot(aes(x=A, y=1/pred^2, linetype=factor(C), color=factor(model))) +
   geom_line() + 
-  # geom_point(aes(y=Y, color=factor(C))) +
   geom_point() +
   facet_wrap(~D, labeller=label_both) +
   ylim(c(25, 105)) +
