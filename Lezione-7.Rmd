@@ -333,6 +333,10 @@ gt %>%
   )
 ```
 
+**ESERCIZIO**: data la serie temporale `gtemp_land`, realizzare un grafico che mostra la serie temporale e il suo massimo su una finestra mobile di 5 anni, per gli anni dal 1990 in poi.
+
+**ESERCIZIO** considerando i dati su <https://www.ncei.noaa.gov/access/monitoring/climate-at-a-glance/global/time-series>, considerando che da tale pagina è possibile ottenere un URL dei dati in formato CSV, caricare direttamente i dati per la regione dell'emisfero Nord separatamente per terra e per oceano. Realizzare una `xts` bivariata che combina i due, applicare un filtro a media mobile su tre anni e realizzare un grafico con le due serie temporali mediate.
+
 
 # Modelli ARIMA
 
