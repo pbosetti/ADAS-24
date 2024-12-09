@@ -1130,3 +1130,5 @@ dm %>%
        y="Velocità di filtrazione", 
        linetype="Concentrazione")
 ```
+
+> **NOTA**: `facet_grid()` è analoga a `facet_wrap()`: mentre la seconda sfaccetta i grafici per i diversi livelli assunti da **una** variabile categorica in sequenza, la prima realizza una matrice di grafici in cui righe e colonne riportano diversi livelli di **due** variabili categoriche.
