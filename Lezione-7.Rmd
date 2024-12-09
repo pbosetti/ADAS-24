@@ -1,0 +1,464 @@
+---
+title: "Lezione 7: Serie Storiche"
+author: "Paolo Bosetti"
+date: "`r Sys.Date()`"
+output:
+  pdf_document:
+    toc: true
+    number_sections: true
+  html_notebook:
+    toc: true
+header-includes: \usepackage[italian]{babel}
+---
+
+```{r setup, message=FALSE, warning=FALSE, include=FALSE}
+library(tidyverse)
+library(modelr)
+library(adas.utils)
+library(xts)
+library(tsbox)
+library(astsa)
+library(forecast)
+source("my_lib.R")
+
+knitr::opts_chunk$set(
+  fig.dim=c(5,3)*1.2,      # dimensioni delle figure in pollici
+  out.width = "10cm",  # larghezza figure sul documento
+  fig.align = "center"
+) 
+```
+
+# Date e tempo in R
+
+In R ci sono due tipi di oggetti per memorizzare informazioni su tempo: 
+
+* `Date` (con risoluzione fino al giorno)
+* `POSIXct` (con risoluzione completa fino a frazioni di secondo).
+
+```{r}
+today <- Sys.Date()
+now <- Sys.time()
+
+today
+now
+
+class(today)
+class(now)
+```
+
+Per la gestione (creazione, modifica) di oggetti `Date` o `POSIXct` è più comodo usare le funzioni di `lubridate` (caricato con `tidyverse`). Ad esempio, per creare istanti temporali c'è la famiglia di funzioni `ymd` e `ymd_hms`, con permutazioni delle lettere `y`, `m` e `d`. Accettano come argomento una stringa che rappresenta una data o una data con orario; le componenti della data possono essere separate da `-` o da `/`, a piacere:
+
+```{r}
+t1 <- dmy("01-01-2023")
+t1 %>% class()
+t2 <- ymd("2024-12-9")
+t2
+t3 <- ymd_hm("2024/12/09 08:45", tz="CET")
+t3
+ymd_hm("2024/7/09 08:45", tz="CET")
+```
+
+Per estrarre i componenti da questi oggetti:
+
+```{r}
+year(t1)
+month(t2)
+day(t3)
+wday(t3)
+```
+
+Si noti che **wday** ha diverse opzioni (vedi help):
+
+```{r}
+wday(t3, week_start = 1)
+wday(t3, label=T)
+```
+
+Esistono anche:
+
+```{r}
+mday(t3)
+yday(t3)
+```
+
+Per la settimana dell'anno:
+
+```{r}
+week(t3)
+```
+
+
+tra oggetti data/tempo sono ovviamente possibili le operazioni algebriche, che **sono vettorializzate** (cioè operano anche su vettori, elemento per elemento):
+
+```{r}
+(today - t1) %>% class()
+(today - t1) %>% as.numeric()
+```
+
+È possibile usare **periodi** (vedi l'help per `period`):
+
+```{r}
+now + hours(12)
+now + days(10)
+now + weeks(2)
+now + months(2)
+now + years(1)
+```
+
+Spesso è utile **arrotondare** una data ad un sottoperiodo, ad esempio alla fine della settimana precedente o successiva:
+
+```{r}
+ceiling_date(today, "weeks")
+floor_date(today, "weeks")
+```
+
+È ovvio che per trattare serie temporali è necessario poter creare (e gestire) sequenze di date o istanti temporali. Su usa la solita funzione `seq`, che però ha anche la capacità di accettare stringhe descrittive per l'opzione `by` (vedere l'help per `seq.Date`):
+
+```{r}
+seq(today, today + months(1), by="1 weeks")
+```
+
+Se si desiderano intervalli inferiori al secondo, si può passare a `by` un valore numerico (dove l'unità rappresenta il secondo). Si noti che normalmente R stampa gli oggetti temporali con una risoluzione fino al secondo, anche se internamente sono memorizzati anche i decimali:
+
+```{r}
+seq(now, now+minutes(1), by=0.1) %>% head()
+```
+
+Per visualizzare le frazioni di secondo è necessario cambiare le opzioni di R:
+
+```{r}
+options(digits.secs=3) # fino al millisecondo
+seq(now, now+minutes(1), by=0.1) %>% head()
+```
+
+Il risultato di una chiamata a `options` rimane attivo per tutta la sessione corrente.
+
+**ESERCIZIO:** Calcolare quanti giorni e quante settimane sono trascorsi dalla propria data di nascita, e in che giorno della settimana cadeva tale data.
+
+# Serie temporali
+
+## Classe `ts`
+
+R base mette a disposizione la classe `ts` per rappresentare le serie temporali. Un oggetto `ts` contiene un vettore di osservazioni e informazioni sull'inizio, fine e passo temporale. Quindi:
+
+* non c'è una colonna dei tempi esplicita
+* non c'è un'unità di tempo esplicita, ma il tempo è semplicemente un numero razionale per il quale l'unità è arbitraria e dipende dal contesto (può essere un anno, una settimana, un minuto, ecc.)
+* il passo temporale è sempre costante, cioè la serie è **regolare**
+
+Ad esempio, una serie di 20 osservazioni campionate 10 volte per ogni unità di tempo (ad es. 10 volte all'ora per un periodo di due ore, o 10 volte all'anno per due anni, ecc.):
+
+```{r}
+ts(rnorm(20), start=0, frequency = 10)
+```
+
+Se la frequenza è 12, R assume che il periodo sia l'anno e la frequenza mensile; se la frequenza è 4, assume un periodo annuale con frequenza trimestrale. Se l'opzione `start` è un vettore di due elementi, il primo elemento è il valore dell'unità di tempo (ad es. l'anno), il secondo è il sotto-periodo (ad es. il mese):
+
+```{r}
+(ts(rnorm(20), start=c(2024,11), frequency=12) -> s1)
+```
+
+È possibile mettere immediatamente in grafico una serie `ts` usando la funzione `plot()` base, però con poco controllo sull'aspetto (per cui più avanti vedremo come usare invece GGPlot):
+
+```{r}
+plot(s1)
+```
+
+Si possono estrarre informazioni sulla serie temporale:
+
+```{r}
+start(s1)
+end(s1)
+frequency(s1)
+```
+
+E si può convertirla in un vettore numerico o estrarre il vettore dei tempi:
+
+```{r}
+as.numeric(s1)
+time(s1)
+```
+
+È anche possibile creare serie temporali multivariate, passando a `ts` una tabella (`tibble` o `data.frame`) invece di un vettore:
+
+```{r}
+s2 <- ts(
+  tibble(
+    A = rnorm(20),
+    B = runif(20)
+  ),
+  start=c(2024,11),
+  frequency=12
+)
+s2
+```
+
+Da una serie temporale multivariata possiamo estrarre le colonne con `[]` (ma **attenzione**: non funziona l'operatore `$`!):
+
+```{r}
+s2[1:5,"B"]
+```
+
+
+## Classe `xts`
+
+La classe `ts` ha alcuni limiti, principalmente:
+
+* avendo una colonna del tempo implicita, è limitata a passi temporali costanti
+* è scomoda da **indicizzare**, cioè non è semplice estrarne dei sotto-periodi
+* le informazioni di tempo **non sono** oggetti data/tempo, quindi è complicato rappresentare il tempo sul calendario
+
+Per superare queste limitazioni si può usare la classe `xts` (da installare). Per la creazione vuole un vettore (serie monovariata) o una tabella (serie multivariata), e un vettore (di pari lunghezza!) di oggetti tempo, tipicamente, ma non necessariamente, ottenuto con `seq`:
+
+```{r}
+x1 <- xts(
+  tibble(
+    A = 1:8,
+    B = rnorm(length(A))
+  ),
+  order.by = seq(
+    from = Sys.Date(),
+    to = Sys.Date() + days(7),
+    by = "1 days"
+  )
+)
+
+x1$A
+```
+
+La libreria `tsbox` (da installare) contiene numerose funzioni per la conversione di serie storiche in/da altri tipi di oggetti, incluso `xts`. Queste funzioni hanno nomi che cominciano tutti per `ts_` e terminano con il nome della classe di destinazione. Ad esempio, per trasformare una `ts` in una `xts`:
+
+```{r}
+s2 %>% ts_xts() %>% head()
+```
+
+Per trasformare una `xts` in una `ts`:
+
+```{r}
+ts_ts(x1)
+```
+
+Si noti che se la `ts` di partenza è monovariata, `ts_xts` produce una serie in cui la variabile aleatoria si chiama `value`. Ad esempio, vediamo con la serie `gtemp_land`, che rappresenta l'anomalia termica globale per le terre emerse ed è disponibile nel pacchetto `astsa` (da installare):
+
+```{r}
+gtemp_land %>% ts_xts() %>% head()
+```
+
+È possibile cambiare il nome della colonna con `dimnames`:
+
+```{r}
+gtemp_land %>% ts_xts() -> gt
+dimnames(gt) <- list(NULL, "temp")
+gt %>% head()
+```
+
+Gli oggetti `xts` sono molto flessibili per l'indicizzazione: basta passare un intervallo, eventualmente aperto a destra o sinistra:
+
+```{r}
+gt["2010/2015"]
+gt["/1860"]
+gt["2010-01/2012-06"]
+```
+
+È spesso necessario applicare una funzione ad una serie storica su una finestra mobile. Per questo scopo c'è la funzione `rollapply` e le scorciatoie `rollmean`, `rollmin`, `rollmax` e simili:
+
+```{r}
+rollapply(gt, 3, mean, align="left") %>% head()
+```
+Incidentalmente, le serie `xts` possono essere direttamente passati a `plot()`, anche se il grafico che si ottiene è migliore di quello ottenuto per una `ts`, dato che è basato su GGPlot:
+
+```{r}
+gt %>% rollapply(5, \(x) mean(x), align="left") %>% plot()
+```
+
+Se si vuole applicare una funzione di sommario per sotto-periodi invece che su finestra mobile, ci sono le funzioni `apply.[daily|weekly|monthly|quarterly|yearly]`. Queste funzioni ovviamente riducono la lunghezza della serie: ad esempio, applicando `apply.monthly` ad una serie annuale con frequenza quotidiana, si riduce il numero di osservazioni da 365 (o 366), a 12.
+
+```{r message=FALSE, warning=FALSE}
+x2 <- xts(
+  rnorm(366),
+  order.by = seq(
+    from = ymd("2024-1-1"),
+    to = ymd("2024-12-31"),
+    by = "1 days"
+  )
+)
+
+x2 %>% apply.weekly(mean) %>% plot()
+```
+
+Esistono le funzioni corrispondenti all'operatore *lag* e $\nabla$ (differenza finita):
+
+```{r}
+gt %>% lag.xts(10)
+```
+
+```{r}
+gt %>% diff(differences = 1) %>% plot()
+```
+
+
+## Grafici di xts con GGPlot
+
+Memorizzare le serie temporali come oggetti `xts` eventualmente multivariati ha il vantaggio di poter realizzare grafici con GGPlot.
+
+Ciò è possibile grazie al fatto che se l'argomento `data` di `ggplot` non è una tabella, `ggplot` cerca comunque di convertirlo in tabella mediante la funzione `fortify`.
+
+```{r}
+gt %>% fortify() %>% head()
+```
+
+Come si vede, la colonna dei tempi è rinominata in `Index`, e questo è il nome da utilizzare per l'ascissa delle estetiche `ggplot`.
+
+Come esempio, aggiungiamo a `gt` una seconda colonna ottenuta con la media mobile:
+
+```{r}
+gt$mean_temp <- rollmean(gt, 9, align="right")
+```
+
+Ora mettiamo in grafico le due serie:
+
+```{r warning=FALSE}
+gt %>% 
+  ggplot(aes(x=Index, y=temp)) +
+  geom_line() + 
+  geom_line(aes(y=mean_temp), color="red") +
+  scale_x_date(
+    # Una tacca ogni 10 anni:
+    breaks="10 years",
+    # Mostrare solo l'anno, tralasciando mese e giorno:
+    labels=scales::label_date("%Y")
+  ) +
+  theme(
+    # Rotazione etichette X:
+    axis.text.x = element_text(angle=90)
+  )
+```
+
+
+# Modelli ARIMA
+
+## Simulazione
+
+È possibile simulare una serie ARIMA(p,d,q) a partire dai coefficienti AR $\phi_1, \phi_2,\dots, \phi_p$, dai coefficienti MA $\vartheta_1, \vartheta_2, \dots, \vartheta_q$, dall'ordine di differenziazione $d$, e da un seme per la generazione delle innovazioni (cioè la componente stocastica):
+
+```{r}
+set.seed(0)
+
+ts1 <- arima.sim(
+  model = list(
+    ar = c(0.7, 0.29),
+    ma = c(0.5, 0.49),
+    order = c(2, 0, 2)
+  ),
+  n = 150
+)
+```
+
+Si noti che i coefficenti della parte autoregressiva devono soddisfare il requisito di stabilità:
+
+$$
+ \left |\sum_{i=1}^p \phi_i \right | < 1
+$$
+
+In grafico:
+
+```{r}
+ts1 %>% ts_xts() %>% 
+  ggplot(aes(x=Index, y=value)) +
+  geom_line()
+```
+
+Si noti che `arima.sim` genera una sequenza dei tempi con base unitaria a partire dall'istante 0. Quindi convertita in `xts` risulta una serie temporale che inizia nell'anno 0 e dura 150 anni.
+
+Per traslare l'origine dei tempi, considerando una frequenza mensile, applichiamo esplicitamente `fortify()` e poi usiamo `dplyr`:
+
+```{r}
+ts1 %>% ts_xts() %>% 
+  fortify() %>% 
+  mutate(
+    Index = ymd("2000-01-01") + (Index - first(Index))/12
+  ) %>% 
+  ggplot(aes(x=Index, y=value)) +
+  geom_line()
+```
+
+**NOTA**: Simulare una serie storica è utile quando si desidera generare una sequenza di dati **plausibili** in mancanza di un segnale tempo-dipendente reale, allo scopo di mettere a punto un algoritmo o un modello di calcolo o di controllo.
+
+## Analisi
+
+I principali strumenti di analisi delle serie temporali sono la funzione di autocorrelazione ACF e la funzione di autocorrelazione parziale PACF.
+
+La libreria `forecast` (da installare) mette a disposizione `ggtsdisplay()`, che realizza contemporaneamente il grafico della serie temporale, la sua ACF e la sua PACF:
+
+```{r}
+set.seed(5)
+arima.sim(
+  model = list(
+    ar = c(0.9),
+    ma = c(0.4, 0.3),
+    order = c(1, 1, 2)
+  ),
+  n = 150
+) %>% 
+  diff(differences = 1) %>% 
+  ggtsdisplay()
+```
+
+Giocando con i parametri del modello è possibile verificare quanto illustrato [nelle slide](https://paolobosetti.quarto.pub/slides/ADAS/7-serie_temporali.html#/modelli-ma-e-pacf-1).
+
+## Stabilità e ridondanza
+
+Ricordiamo che la stabilità e invertibilità del modello possono anche essere stimate verificando che le radici dei due polinomi $\Phi_p(x) = 1 - \phi_1x - \phi_2x^2 - \dots -\phi_pz^p$ e $\Theta_q(x) = 1 - \vartheta_1x - \vartheta_2x^2 - \dots -\vartheta_pz^q$ siano **fuori dal cerchio unitario** sul piano complesso:
+
+```{r}
+abs(polyroot(c(1, -0.9)))
+abs(polyroot(c(1, 0.4, 0.3)))
+```
+
+Per la ridondanza invece bisogna fattorizzare i due polinomi $\Phi_p$ e $\Theta_q$, eliminando i termini comuni. Notare l'uso di `zapsmall()` (R base), che rimuove i valori molto piccoli risultanti dai *floating point error*:
+
+```{r}
+polyroot(c(1, -0.9)) %>% zapsmall()
+polyroot(c(1, 0.4, 0.3)) %>% zapsmall()
+```
+
+In questo caso non ci sono termini comuni.
+
+
+## Stabilizzazione delle serie temporali
+
+Una serie temporale che non sia stazionaria deve essere resa tale per poter essere trattata con modelli ARIMA.
+
+Ad esempio, consideriamo la serie `AirPassengers`:
+
+```{r}
+ggtsdisplay(AirPassengers)
+```
+
+È evidente che sia la media che la varianza della serie non sono stazionarie. Per prima cosa cerchiamo di stabilizzare la varianza: dato che essa aumenta all'aumentare del valore, una trasformazione adatta è il logaritmo:
+
+```{r}
+AirPassengers %>% 
+  log() %>% 
+  ggtsdisplay()
+```
+
+Il passo successivo è stabilizzare la media mediante differenziazione:
+
+```{r}
+AirPassengers %>% 
+  log() %>% 
+  diff() %>% 
+  ggtsdisplay()
+```
+
+In questo modo osserviamo che la serie trasformata è **stazionaria**. Tuttavia, gli autocorrelogrammi sono di difficile interpretazione, eccetto il fatto che ci sono picchi significativi ogni 12 lag: ciò è indice di **periodicità**, o stagionalità, nella serie.
+
+La stagionalità può essere confermata anche con un `lag.plot`, che riporta il grafico della serie contro se stessa, ritardata di un lag crescente. Più i punti risultano allineati, maggiore è l'autocorrelaizone. In questo caso si conferma che per lag 12 la serie è fortemente autocorrelata, cioè l'andamento è ciclico con periodo 12 mesi:
+
+```{r}
+AirPassengers %>% 
+  log() %>%
+  diff() %>%
+  lag.plot(lags=16, do.lines=F)
+```
+
