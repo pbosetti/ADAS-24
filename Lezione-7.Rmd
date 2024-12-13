@@ -19,6 +19,7 @@ library(xts)
 library(tsbox)
 library(astsa)
 library(forecast)
+library(ggfortify)
 source("my_lib.R")
 
 knitr::opts_chunk$set(
@@ -337,6 +338,26 @@ gt %>%
 
 **ESERCIZIO** considerando i dati su <https://www.ncei.noaa.gov/access/monitoring/climate-at-a-glance/global/time-series>, considerando che da tale pagina è possibile ottenere un URL dei dati in formato CSV, caricare direttamente i dati per la regione dell'emisfero Nord separatamente per terra e per oceano. Realizzare una `xts` bivariata che combina i due, applicare un filtro a media mobile su tre anni e realizzare un grafico con le due serie temporali mediate.
 
+```{r}
+ocean <- read.csv("https://www.ncei.noaa.gov/access/monitoring/climate-at-a-glance/global/time-series/nhem/tavg/ocean/1/1/1850-2024/data.csv", comment="#")
+land <- read.csv("https://www.ncei.noaa.gov/access/monitoring/climate-at-a-glance/global/time-series/nhem/tavg/land/1/1/1850-2024/data.csv", comment="#")
+```
+
+
+```{r}
+(ocean %>% 
+  rename(Ocean=Anomaly) %>% 
+  full_join(rename(land, Land=Anomaly)) %>% 
+  mutate(Year=factor(Year)) %>% 
+  ts_long() %>% 
+  rename(time=Year) %>% 
+  ts_xts() %>% 
+  rollmean(3))["1990/"] %>% 
+  ggplot(aes(x=Index)) +
+  geom_line(aes(y=Ocean), color="darkblue") +
+  geom_line(aes(y=Land), color="darkgreen")
+```
+
 
 # Modelli ARIMA
 
@@ -464,5 +485,66 @@ AirPassengers %>%
   log() %>%
   diff() %>%
   lag.plot(lags=16, do.lines=F)
+```
+
+# Regressione
+
+Ovviamente l'interesse principale è nella regressione di una serie storica, che richiede due passi:
+
+1. identificazione dei parametri $p$, $d$ e $q$ del modello ARIMA. Questi parametri sono generalmente chiamati **iper-parametri**, perché sono parametri che definiscono la *forma* del modello, piuttosto che essere coefficienti del modello veri e propri (un po' come il grado del polinomio è un iper-parametro nella regressione lineare, e il numero di strati è un iper-parametro in un modello a reti neurali, ecc.)
+2. adattamento dei parametri (coefficienti), mediante minimizzazione dei residui (regressione vera e propria)
+
+Gli autocorrelogrammi possono aiutare a definire gli iper-parametri. Ad esempio, nel caso precedente possiamo osservare che la ACF ha solo picchi ripetuti indice di stagionalità, mentre la PACF mostra un solo picco, e che la serie si stabilizza con una sola differenziazione. Quindi possiamo supporre di avere a che fare con una serie modellabile come ARIMA(0,1,1), con una componente stagionale a 12 mesi (*lag* 12). Difficile dire però quali siano i valori corretti per gli iper-parametri della componente stagionale.
+
+Possiamo provare ad effettuare una regressione con la funzione `arima()`, usando poi la regressione per predirre i successivi 20 mesi, con `forecast(h=20)`:
+
+```{r}
+fit <- AirPassengers %>% 
+  Arima(
+    order = c(0,1,1),
+    seasonal = list(order = c(0,1,0), period = 12)
+  )
+
+fit %>% 
+  forecast(h=20) %>% 
+  fortify() %>% # Questo richiede la libreria ggfortify!
+  ggplot(aes(x=Index, y=Data)) +
+  geom_line() +
+  geom_ribbon(aes(ymin=`Lo 80`, ymax=`Hi 80`), fill="blue", alpha=0.5) +
+  geom_ribbon(aes(ymin=`Lo 95`, ymax=`Hi 95`), fill="blue", alpha=0.5) +
+  geom_line(aes(y=`Point Forecast`), color="red")
+  
+```
+
+Si noti che in breve lo stesso grafico si può ottenere con la funzione `autoplot()`:
+
+```{r}
+fit %>% 
+  forecast(h=20) %>% 
+  autoplot()
+```
+
+È chiaro che, salvo i casi in cui gli autocorrelogrammi sono semplici e evidenti (quindi casi senza stagionalità e con solo un contributo AR o MA), in generale è difficile identificare gli iper-parametri corretti. L'approccio è quindi quello di verificare diverse combinazioni dei parametri e scegliere quella con **indice di merito** migliore. Come indice di merito si usa generalmente l'indice di Akaike corretto AICc o, quando le osservazioni della serie storica sono molte (migliaia o più) l'indice BIC (che tende a sfavorire modelli inutilmente complessi proteggendo dall'overfitting).
+
+Tutta questa procedura è resa automatica dalla funzione `auto.arima()`, che calcola anche la stagionalità e l'eventuale trasformazione Box-Cox necessaria a stabilizzare la varianza:
+
+```{r}
+(fit <- auto.arima(AirPassengers, lambda="auto", trace=TRUE))
+```
+
+Come sopra, possiamo estrapolare il modello predicendo i successivi 20 mesi, con il relativo intervallo di confidenza:
+
+```{r}
+fit %>% forecast(h=20) %>% autoplot()
+
+```
+
+**ESERCIZIO**: regredire i dati `AirPassengers` fino al Dicembre 1948, calcolare la previsione fino alla fine della serie originale (Gennaio 1960), e confrontare in grafico la previsione con la realtà. Realizzare anche un grafco della differenza.
+
+Suggerimento: convertire la `ts` in `xts` per filtrare i dati, e corvertirla di nuovo in `ts` prima di applicare `auto.arima()`.
+
+```{r}
+ap <- AirPassengers %>% ts_xts()
+ap["1949-01-01/"]
 ```
 
