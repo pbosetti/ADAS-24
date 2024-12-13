@@ -357,7 +357,8 @@ df %>%
   ) %>% 
   pivot_longer(mod.1:mod.2, values_to = "pred", names_to = "model") %>% 
   ggplot(aes(x=A, y=pred, color=B, linetype=model)) +
-  geom_line()
+  geom_line() +
+  labs(y="predizione", linetype="modello", title="Grafico di interazione")
 ```
 
 
