@@ -343,7 +343,22 @@ expand.grid(
   scale_fill_viridis_c()
 ```
 
-**Esercizio**: confrontare le due superfici di risposta con un grafico di interazione parametrico, in cui i colori delle linee rappresentino i due diversi modelli.
+> **Esercizio**: confrontare le due superfici di risposta con un grafico di interazione parametrico, in cui i colori delle linee rappresentino i due diversi modelli.
+
+> Aggiungiamo le predizioni per i due modelli alla tabella iniziale, usando due nomi differenti e ricordandoci di anti-trasformare la predizione del secondo modello; poi rendiamo la tabella tidy e infine la mettiamo in grafico con le opportune estetiche:
+
+```{r}
+df %>% 
+  add_predictions(df.lm, var="mod.1") %>% 
+  add_predictions(df.lm2, var="mod.2") %>% 
+  mutate(
+    B = factor(B),
+    mod.2 = sqrt(mod.2)
+  ) %>% 
+  pivot_longer(mod.1:mod.2, values_to = "pred", names_to = "model") %>% 
+  ggplot(aes(x=A, y=pred, color=B, linetype=model)) +
+  geom_line()
+```
 
 
 
