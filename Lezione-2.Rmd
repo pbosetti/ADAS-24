@@ -33,7 +33,7 @@ header-includes: \usepackage[italian]{babel}
 
 # Eseguo lo script con le mie funzioni personalizzate:
 library(modelr)
-source("my_lib.R")
+library(adas.utils)
 
 knitr::opts_chunk$set(
   fig.dim=c(5,3),      # dimensioni delle figure in pollici
@@ -169,21 +169,14 @@ tribble(
 
 Esistono le versioni *tidy* delle funzioni per leggere e scrivere file di testo:
 
--   `read_csv()`
-
--   `read_csv2()`
-
--   `read_table()`
-
--   `read_fwf()`
-
--   `write_csv()`
-
--   `write_csv2()`
-
--   `write_table()`
-
--   `write_fwf()`
+- `read_csv()`
+- `read_csv2()`
+- `read_table()`
+- `read_fwf()`
+- `write_csv()`
+- `write_csv2()`
+- `write_table()`
+- `write_fwf()`
 
 Il principale vantaggio di queste funzioni rispetto alle equivalenti con il punto nel nome (es. `read.table`) è che esse restituiscono direttamente una tibble.
 
@@ -192,13 +185,13 @@ Vedere il cheatsheet qui: <https://rstudio.github.io/cheatsheets/data-import.pdf
 Il sito <https://paolobosetti.quarto.pub>, nella sezione *Example data*, fornisce alcuni file con dati di esempio che useremo durante il corso. Per semplificarne il download, creiamo il file `my_lib.R` contenente la funzione indicata sul sito e lo carichiamo all'inizio di ogni notebook con il comando `source("my_lib.R")`. A questo punto possiamo caricare un file come tibble in questo modo:
 
 ```{r}
-read_table(example_url("cotton.dat"))
+read_table(examples_url("cotton.dat"))
 ```
 
 A quanto pare, l'importazione non è andata a buon fine. Scarichiamo il file grezzo per capire come mai:
 
 ```{r}
-read_file(example_url("cotton.dat")) %>%
+read_file(examples_url("cotton.dat")) %>%
   str_trunc(200) %>% # Tronco ai primi 200 caratteri
   cat()              # Stampo la stringa risultante
 ```
@@ -206,7 +199,7 @@ read_file(example_url("cotton.dat")) %>%
 Le prime 4 righe in effetti sono commenti che iniziano col carattere `#`, quindi è opportuno specificare il carattere di commento in `read_table`:
 
 ```{r}
-data <- read_table(example_url("cotton.dat"), comment = "#")
+data <- read_table(examples_url("cotton.dat"), comment = "#")
 data
 ```
 
@@ -262,7 +255,7 @@ Gli argomenti di `select` sono:
 
 ### Modificare una colonna
 
-©on `mutate` è possibile modificare una colonna esistente o creare una nuova colonna sulla base di una o più colonne esistenti, mediante espressioni (vettorializzate!):
+Con `mutate` è possibile modificare una colonna esistente o creare una nuova colonna sulla base di una o più colonne esistenti, mediante espressioni (vettorializzate!):
 
 ```{r}
 starwars %>% 
@@ -810,7 +803,7 @@ Secondo Chauvenet il punto va rigettato, secondo Grubbs il p-value è del 7% (un
 Considerare i seguenti dati:
 
 ```{r message=FALSE}
-read_table(example_url("diet.dat")) %>% head(n=10)
+read_table(examples_url("diet.dat")) %>% head(n=10)
 ```
 
 verificare l'ipotesi che i valori della colonna `cTime` quando `diet` è uguale a `D` provengano da una popolazione con media $\mu_0=59$
@@ -821,7 +814,7 @@ verificare l'ipotesi che i valori della colonna `cTime` quando `diet` è uguale 
 Considerare i seguenti dati: essi rappresentano delle misure di durezza effettuate con due diversi strumenti (indentatori `Tip1` e `Tip2`). Si ha il sospetto che uno dei due strumenti non sia correttamente calibrato e si vuole verificare l'ipotesi che le 10 misure ottenute col primo strumento abbiano lo stesso valore atteso di quelle ottenute col secondo. Inoltre, non disponendo di materiale su cui verificare la durezza sufficientemente grande per realizzare tutte e venti le impronte, si effettuano due a due le misure di durezza su piccoli campioni (`specimen`), considerati internamente omogenei ma non necessariamente tutti uguali:
 
 ```{r message=FALSE}
-read_table(example_url("hardness2.dat"))
+read_table(examples_url("hardness2.dat"))
 ```
 
 Che conclusioni possiamo trarre? rifiutiamo $H_0:~\mu_1=\mu_2$? se sì, con che probabilità d'errore? Cosa cambia con i differenti tipi di test di Student? Cosa possiamo dire sulla loro potenza?
@@ -836,7 +829,7 @@ Consideriamo i dati nel file esempio `diet.dat`:
 options(knitr.kable.NA = "--")
 
 #Stampo la tabella in forma compatta ("wide")
-read_table(example_url("diet.dat")) %>% 
+read_table(examples_url("diet.dat")) %>% 
   group_by(diet) %>%                          # Raggruppo per dieta
   mutate(ripetizione=1:n()) %>%               # Aggiungo colonna con l'ID del singolo test,
                                               # gruppo per gruppo
@@ -1063,7 +1056,7 @@ chisq.test(m)
 Consideriamo le prove a trazione su filati con diversi percentuali di cotone:
 
 ```{r}
-df <- read.table(example_url("cotton.dat"), header=T, comment.char="#", sep="\t") %>% 
+df <- read.table(examples_url("cotton.dat"), header=T, comment.char="#", sep="\t") %>% 
   tibble() %>% 
   mutate(
     Cotton = factor(Cotton)
@@ -1150,7 +1143,7 @@ df.tuk$Cotton %>%
 Consideriamo un esperimento che misura la vita di una batteria al variare della temperatura di esercizio e del tipo di elettrolita utilizzato all'interno della batteria stessa:
 
 ```{r}
-df <- read.table(example_url("battery.dat"), comment="#", header=T) %>% 
+df <- read.table(examples_url("battery.dat"), comment="#", header=T) %>% 
   mutate(
     Temperature = factor(Temperature),
     Material = factor(LETTERS[Material])
