@@ -19,7 +19,7 @@ header-includes: \usepackage[italian]{babel}
 library(tidyverse)
 library(modelr)
 library(ROCR)
-source("my_lib.R")
+library(adas.utils)
 
 knitr::opts_chunk$set(
   fig.dim=c(5,3),      # dimensioni delle figure in pollici
@@ -210,7 +210,7 @@ La scelta del modello da regredire deve essere **validata**, cioè bisogna verif
 Carichiamo un set di dati di esempio:
 
 ```{r message=FALSE, warning=FALSE}
-df <- read_csv(example_url("kfold.csv"))
+df <- read_csv(examples_url("kfold.csv"))
 df %>% 
   ggplot(aes(x=x, y=y)) +
   geom_point()
@@ -255,6 +255,11 @@ models <- df %>%
       lm(y~poly(x, 8, raw=T), data=.)
     )
   }
+
+models <- df %>% 
+  filter(train) %>% {
+    map(1:8, \(deg) lm(y~poly(x, deg, raw=T), data=.))
+  }
 ```
 
 Mi costruisco una tibble con i valori di $R^2$ per ogni modello e li confronto su un grafico a barre:
@@ -289,7 +294,7 @@ tibble(
   geom_col(position="dodge")
 ```
 
-Osserviamo che RMSE è minimo per una regressione polinomiale di terzo grado, quindi per evitare sotto- e sofra-adattamento scegliamo un polinomio di terzo grado.
+Osserviamo che RMSE è minimo per una regressione polinomiale di terzo grado, quindi per evitare sotto- e sovra-adattamento scegliamo un polinomio di terzo grado.
 
 **ESERCIZIO**: effettuare la regressione con un polinomio di terzo grado, metterla in grafico, identificare i coefficienti significativi e i loro valori, e verificare i residui.
 
@@ -411,7 +416,8 @@ dfn %>%
 Abbiamo i risultati di un esperimento che valuta il *drop test* di bottiglie di sapone liquido:
 
 ```{r}
-data <- read_table(example_url("soap_bottles.dat"), comment="#")
+data <- read_table(examples_url("soap_bottles.dat"), comment="#") %>%
+  mutate(fail = !OK)
 
 data %>% slice_head(n=6) %>% knitr::kable()
 ```
@@ -426,7 +432,7 @@ I risultati possiamo osservarli in un istogramma:
 data %>% 
   ggplot(aes(x=p)) +
   geom_histogram(bins=20, color="black", fill=gray(0.5)) +
-  geom_rug(aes(color=OK))
+  geom_rug(aes(color=fail))
 ```
 
 È evidente l'**andamento bimodale** dell'istogramma: ci sono cioè due massimi, dato che l'istogramma è la sovrapposizione di due distribuzioni (una a 99.3% di livello atteso, una al 99.6%). Il comando `geom_rug()` aggiunge una "stuoia" (*rug*) di linee in basso, una per ogni osservazione, colorate in funzione del risultato del *drop test*. Come si osserva, le due popolazioni sono parzialmente sovrapposte, ed è quindi il caso tipico in cui si può ottenere un classificatore con una regressione logistica.
@@ -446,10 +452,12 @@ data %>% slice_head(n=10)
 **ESERCIZIO**: ripetere la stessa operazione di suddivisione del dataset utilizzando le funzioni di `dplyr`.
 
 ```{r}
-data %>% 
+set.seed(0)
+data <- data %>% 
   mutate(
-    training = sample(c(T,F), n(), prob=c(80, 20), replace=T)
-  )
+    training = sample(c("train","valid"), n(), prob=c(80, 20), replace=T)
+  ) %>% 
+  select(-OK)
 ```
 
 
@@ -458,7 +466,7 @@ data %>%
 Ora possiamo costruire il modello lineare generalizzato (logistico) sul sottoinsieme di training (`family="binomial"` specifica di usare la funzione di collegamento logistica, corrispondente ad una distribuzione binomiale dei residui):
 
 ```{r}
-data.glm <- glm(OK ~ p, family="binomial", data=filter(data, training))
+data.glm <- glm(fail ~ p, family="binomial", data=filter(data, training == "train"))
 summary(data.glm)
 ```
 
@@ -494,13 +502,13 @@ Ora possiamo mettere in grafico e confrontare i risultati del test e le predizio
 
 ```{r}
 data %>% 
-  mutate(wrong = OK != (pred > 0.5)) %>% 
+  mutate(correct = fail == (pred > 0.5)) %>% 
   ggplot(aes(x=p, y=pred)) +
   geom_line() +
-  geom_point(aes(y=as.numeric(OK), color=wrong)) +
+  geom_point(aes(y=as.numeric(fail), color=correct)) +
   geom_vline(xintercept = x0, linetype=2) +
   facet_wrap(~training, nrow=2) +
-  labs(x="Livello di riempimento", y="predizione", color="pred. errata")
+  labs(x="Livello di riempimento", y="predizione", color="pred. corretta")
 ```
 
 Si noti l'uso di `facet_wrap()`: separa su più grafici i dati da visualizzare, suddividendoli per i valori di fattori espressi dal secondo membro di una formula (in questo caso `~training`).
@@ -508,7 +516,7 @@ Si noti l'uso di `facet_wrap()`: separa su più grafici i dati da visualizzare, 
 Confrontiamo i conteggi per le varie condizioni (training e validazione, bottiglia rotta o meno, predizione corretta o errata):
 
 ```{r}
-error_typ <- function(outcome, pred) {
+error_type <- function(outcome, pred) {
   if (outcome == pred) return("correct")
   if (outcome & !pred) return("false neg")
   if (!outcome & pred) return("false pos")
@@ -516,8 +524,8 @@ error_typ <- function(outcome, pred) {
 
 data %>% 
   mutate(
-    type = map2_chr(!OK, pred<0.5, ~error_typ(.x, .y))) %>% 
-  group_by(training, OK, type) %>% 
+    type = map2_chr(fail, pred>0.5, ~error_type(.x, .y))) %>% 
+  group_by(training, fail, type) %>% 
   summarise(count=n())
 ```
 
@@ -532,9 +540,10 @@ Le matrici di confusione possono essere create anche con la funzione `table()`:
 
 ```{r}
 mc_t <- table(
-  Actual = filter(data, training) %>% mutate(positive=!OK) %>% pull(positive),
-  Predicted = filter(data, training) %>% pull(pred) < 0.5
+  Actual = filter(data, training== "train") %>% pull(fail),
+  Predicted = filter(data, training== "train") %>% pull(pred) > 0.5
 )
+mc_t
 round(mc_t / sum(mc_t) * 100, 1)
 ```
 
@@ -544,9 +553,10 @@ Per i dati di validazione, come atteso, vale:
 
 ```{r}
 mc_v <- table(
-  Actual = filter(data, !training) %>% mutate(positive=!OK) %>% pull(positive),
-  Predicted = filter(data, !training) %>% pull(pred) < 0.5
+  Actual = filter(data, training=="valid") %>% pull(fail),
+  Predicted = filter(data, training=="valid") %>% pull(pred) > 0.5
 )
+mc_v
 round(mc_v / sum(mc_v) * 100, 1)
 ```
 
@@ -554,14 +564,17 @@ round(mc_v / sum(mc_v) * 100, 1)
 
 ```{r}
 table(
-  Actual = !data$OK,
-  Predicted = data$pred < 0.5,
-  Subset = ifelse(data$training, "Training", "Validation")
+  Actual = data$fail,
+  Predicted = data$pred > 0.5,
+  Subset = data$training
 )
 ```
 
 ```{r}
-pred <- prediction(filter(data, training)$pred, filter(data, training)$OK)
+pred <- prediction(
+  filter(data, training == "train")$pred, 
+  filter(data, training == "train")$fail
+)
 perf <- performance(pred, "tnr", "fnr")
 plot(perf, colorize=T, print.cutoffs.at=seq(0, 1, 0.2))
 ```
