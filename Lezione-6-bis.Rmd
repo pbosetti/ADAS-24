@@ -1,0 +1,1129 @@
+---
+title: "Lezione 6: Design of Experiments"
+author: "Paolo Bosetti"
+date: "`r Sys.Date()`"
+output:
+  pdf_document:
+    toc: true
+    number_sections: true
+  html_notebook:
+    toc: true
+header-includes: \usepackage[italian]{babel}
+---
+
+```{r setup, message=FALSE, warning=FALSE, include=FALSE}
+library(tidyverse)
+library(modelr)
+library(boot)
+library(patchwork)
+library(PearsonDS)
+library(gghalfnorm)
+library(adas.utils)
+library(glue)
+
+knitr::opts_chunk$set(
+  fig.dim=c(5,3)*1.2,      # dimensioni delle figure in pollici
+  out.width = "10cm",  # larghezza figure sul documento
+  fig.align = "center"
+) 
+```
+
+# Esempio: Vita di un utensile
+
+Mediante un piano fattoriale $3^2$ vogliamo studiare l'influenza della velocità di taglio e dell'angolo di spoglia sulla durata di un utensile da taglio per tornitura. Ripetiamo ogni trattamento due volte.
+
+Fattori:
+
+1. A: Angolo di spoglia (15, 20, 25)
+2. B: Velocità di taglio (125, 150, 175)
+3. Resa: vita (durata) dell'utensile da taglio
+
+## Preparazione della griglia di test
+
+Cominciamo preparando la tabella con tutti i trattamenti, cioè tutte le possibili combinazioni di livelli dei due fattori. Aggiungiamo una colonna per l'ordine standard e una per l'ordine casuale di esecuzione delle prove. Aggiungiamo anche le colonne `A` e `B` per i due fattori in *unità codificate**.
+
+```{r}
+df <- expand.grid(
+  Angle = c(15, 20, 25), # gradi
+  Speed = c(125, 150, 175), # m/min
+  Repeat = c(1,2),
+  Response = NA
+) %>% 
+  mutate(
+    StdOrder = 1:n(),
+    RunOrder = sample(n()),
+    A = scales::rescale(Angle, to=c(-1,1)),
+    B = scales::rescale(Speed, to=c(-1,1)),
+    .before = Angle
+  )
+```
+
+Riordiniamo la tabella secondo la colonna `RunOrder` e la esportiamo in formato `.csv`:
+
+```{r}
+df %>% 
+  arrange(RunOrder) %>% 
+  write.csv2("factorial_plan.csv")
+```
+
+```{r}
+df <- fp_design_matrix(2, rep=2, levels=c(-1, 0, 1)) %>% 
+  fp_add_names(A="Angle", B="Speed") %>% 
+  fp_add_scale(A=c(15, 25), B=c(125, 175))
+
+fp_write_csv(df, "factorial_plan.csv")
+df
+```
+
+
+
+
+## Conduzione esperimenti
+
+La tabella esportata viene utilizzata per la conduzione degli esperimenti. Per ogni trattamento, condotti in ordine casuale secondo colonna `RunOrder`, si riempie la colonna `Response` con i risultati ottenuti.
+
+## Importazione risultati
+
+La tabella dati, questa volta con la colonna `Response` completa, viene poi nuovamente caricata (quella disponibile online è incidentalmente in formato testo anziché `.csv`):
+
+```{r}
+df <- df %>% 
+  left_join(
+    read.table(examples_url("cutting.dat"), header=T) %>% 
+      select(StdOrder = "StandardOrder", Response)
+  ) %>% 
+  select(-Y)
+```
+
+## Analisi della varianza
+
+Costruiamo un modello lineare completo fino al secondo grado (dato che abbiamo tre livelli) e analizziamo la varianza:
+
+```{r}
+df.lm <- lm(Response ~ A * B * I(A^2) * I(B^2), data=df)
+anova(df.lm)
+```
+
+Verifichiamo i residui
+
+```{r}
+df <- df %>% add_residuals(df.lm)
+
+df %>% 
+  ggplot(aes(x=A, y=resid)) + geom_point()
+
+df %>% 
+  ggplot(aes(x=B, y=resid)) + geom_point()
+
+df %>% 
+  ggplot(aes(x=RunOrder, y=resid)) + geom_point()
+
+df %>% 
+  ggplot(aes(sample=resid)) +
+  geom_qq() + 
+  geom_qq_line(color="red")
+
+shapiro.test(df$resid)
+```
+
+I residui risultano normali e privi di pattern.
+
+## Riformulare il modello
+
+Dato che i termini `I(B^2)` (che corrisponde a coefficiente $\beta_2$) e `B:I(A^2)` (che corrisponde a $(\alpha\beta)_{2,1}$) sono non-significativi, possiamo riformulare il modello lineare:
+
+```{r}
+df.lm2 <- lm(Response ~ A * B + I(A^2) + A:I(B^2) + I(A^2):I(B^2), data=df)
+anova(df.lm2)
+```
+
+Anche per questo modello è necessario verificare l'adeguatezza, studiando i residui:
+
+```{r}
+df <- df %>% add_residuals(df.lm2)
+
+df %>% 
+  ggplot(aes(x=A, y=resid)) + geom_point()
+
+df %>% 
+  ggplot(aes(x=B, y=resid)) + geom_point()
+
+df %>% 
+  ggplot(aes(x=RunOrder, y=resid)) + geom_point()
+
+df %>% 
+  ggplot(aes(sample=resid)) +
+  geom_qq() + 
+  geom_qq_line(color="red")
+
+shapiro.test(df$resid)
+```
+
+La normalità e l'assenza di pattern mi consentono di accettare il modello.
+
+
+## Superficie di risposta
+
+Infine possiamo costruire la superficie di risposta per il modello `df.lm2`.
+
+Abbiamo bisogno di una griglia regolare di punti nel dominio di A e B. Su questa griglia possiamo valutare il modello usando la funzione `modelr::add_predictions()`:
+
+```{r}
+rs <- expand.grid(
+  A = seq(-1, 1, length.out=50),
+  B = seq(-1, 1, length.out=50)
+) %>% 
+  add_predictions(df.lm2)
+```
+
+Il nuovo data frame `rs` può essere visualizzato con un grafico a contorno:
+
+```{r}
+rs %>% 
+  ggplot(aes(x=A, y=B, z=pred)) + 
+  geom_contour_filled(bins=20)
+```
+
+Il grafico è probabilmente più chiaro usando il pacchetto `metR`, che mette a disposizione due funzioni alternative per creare un grafico a contorno con le etichette sovrapposte alle curve di livello:
+
+```{r}
+rs %>% 
+  ggplot(aes(x=A, y=B, z=pred)) + 
+  metR::geom_contour_fill(bins=20) +
+  metR::geom_contour2(aes(label=round(after_stat(level), 2)), bins=20) +
+  scale_fill_viridis_c() + 
+  labs(x="Angle (coded units)", y="Speed (c.u.)", fill="Tool life")
+```
+
+**Nota**: l'estetica `aes(label=round(after_stat(level), 2))` serve a specificare le etichette delle curve di livello. I valori di queste etichette sono impostati da una statistica calcolata all'interno della medesima funzione `metR::geom_contour2` (vedi l'help, nella sezione *computed variables*). In tutte le geometrie ggplot, le statistiche interne possono essere utilizzate con la funzione `after_stat()`. Vedere l'help `?ggplot2::aes_eval` per i dettagli.
+
+
+
+# Piano fattoriale $2^2$
+
+Vogliamo studiare la reazione chimica che avviene in un reattore, considerando due fattori:
+
+* A: concentrazione di reagente
+* B: quantità di catalizzatore
+* Resa (Y, *yied*): quantità di prodotto
+
+```{r}
+df <- fp_design_matrix(2, rep=3) %>% 
+  fp_add_names(A="Concentrazione", B="Catalizzatore")
+
+# Colonna della resa
+df$Y <- c(
+  28, 36, 18, 31,
+  25, 32, 19, 30,
+  27, 32, 23, 29
+)
+
+# checksum
+sum(df$Y)
+
+# Tabella formattata (soprattutto per LaTeX)
+df %>% head()
+```
+
+Realizziamo un modello **completo**:
+
+```{r}
+df.lm <- lm(Y~A*B, data=df)
+anova(df.lm)
+```
+
+L'analisi della varianza mostra che l'interazione `A:B` non è significativa, quindi la rimuoviamo dal modello:
+
+```{r}
+df.lm <- lm(Y~A+B, data=df)
+anova(df.lm)
+```
+
+Procediamo alla verifica di adeguatezza del modello, usando per brevità la funzione `resid_plot()` **definita nel file `my_lib.R`**:
+
+```{r}
+resid_plot <- function(t, n) {
+  t %>% 
+    ggplot(aes(x={{n}}, y=resid)) +
+    geom_point()
+}
+
+df %>% 
+  add_residuals(df.lm) %>% 
+  add_predictions(df.lm) %>% {
+    (resid_plot(., RunOrder) + resid_plot(., A)) /
+    (resid_plot(., B) + resid_plot(., pred))
+  }
+```
+
+Verifichiamo anche la normalità dei residui:
+
+```{r}
+df %>% 
+  add_residuals(df.lm) %>% 
+  ggplot(aes(sample=resid)) + 
+  geom_qq() + 
+  geom_qq_line()
+
+shapiro.test(df.lm$residuals)
+```
+
+Infine visualizziamo la superficie di risposta:
+
+```{r}
+expand.grid(
+  A = seq(-1, 1, 0.1), 
+  B = seq(-1, 1, 0.1)
+) %>% 
+  add_predictions(df.lm) %>% 
+  ggplot(aes(x=A, y=B, z=pred)) +
+  metR::geom_contour_fill() +
+  metR::geom_contour2(aes(label = round(after_stat(level), 2))) +
+  scale_x_continuous(
+    sec.axis = sec_axis(
+      ~ scales::rescale(., from=c(-1, 1), to=c(15, 25)),
+      name="reagente (%)"
+    )
+  ) +
+  scale_y_continuous(
+    sec.axis = sec_axis(
+      \(x) scales::rescale(x, from=c(-1, 1), to=c(1, 5)),
+      name="catalizzatore (g)"
+    )
+  ) +
+
+  scale_fill_viridis_c()
+```
+
+L'assenza di interazione corrisponde all'avere curve di livello dritte e parallele.
+
+In realtà, osservando i residui in funzione del valore predetto si può dedurre che c'è un possibile pattern (largo-stretto-largo, a U rovesciata), quindi applichiamo il metodo di Box-Cox per identificare la miglior trasformazione sulla resa:
+
+```{r}
+car::boxCox(df.lm, lambda=seq(-2, 6, 0.1))
+```
+
+Seppure la curva sia abbastanza larga, sembra che la trasformazione $y^*=y^2$ sia preferibile, sebbene anche l'identità sia compresa nell'intervallo al 95%.
+
+Proviamo con la trasformazione:
+
+```{r}
+df.lm2 <- lm(Y^2~A+B, data=df)
+anova(df.lm2)
+df %>% 
+  add_residuals(df.lm2) %>% 
+  add_predictions(df.lm2) %>% {
+    (resid_plot(., RunOrder) + resid_plot(., A)) /
+    (resid_plot(., B) + resid_plot(., pred))
+  }
+```
+
+Effettivamente il pattern si riduce; non drammaticamente, ma del resto, come detto, la curva Box-Cox è molto ampia e non c'è molta differenza tra il risultato della trasformazione con $\lambda=2$ e l'identità.
+
+Verifichiamo anche questa superficie di risposta, ricordando che la resa del modello **deve essere anti-trasformata** ($\sqrt{ax_1 + bx_2 + c}$:
+
+```{r}
+expand.grid(
+  A = seq(-1, 1, 0.1), 
+  B = seq(-1, 1, 0.1)
+) %>% 
+  add_predictions(df.lm2) %>% 
+  ggplot(aes(x=A, y=B, z=sqrt(pred))) +
+  metR::geom_contour_fill() +
+  metR::geom_contour2(aes(label = round(after_stat(level), 2))) +
+  scale_x_continuous(
+    sec.axis = sec_axis(
+      ~ scales::rescale(., from=c(-1, 1), to=c(15, 25)),
+      name="reagente (%)"
+    )
+  ) +
+  scale_y_continuous(
+    sec.axis = sec_axis(
+      \(x) scales::rescale(x, from=c(-1, 1), to=c(1, 5)),
+      name="catalizzatore (g)"
+    )
+  ) +
+
+  scale_fill_viridis_c()
+```
+
+> **Esercizio**: confrontare le due superfici di risposta con un grafico di interazione parametrico, in cui i colori delle linee rappresentino i due diversi modelli.
+
+> Aggiungiamo le predizioni per i due modelli alla tabella iniziale, usando due nomi differenti e ricordandoci di anti-trasformare la predizione del secondo modello; poi rendiamo la tabella tidy e infine la mettiamo in grafico con le opportune estetiche:
+
+```{r}
+df %>% 
+  add_predictions(df.lm, var="mod.1") %>% 
+  add_predictions(df.lm2, var="mod.2") %>% 
+  mutate(
+    B = factor(B),
+    mod.2 = sqrt(mod.2)
+  ) %>% 
+  pivot_longer(mod.1:mod.2, values_to = "pred", names_to = "model") %>% 
+  ggplot(aes(x=A, y=pred, color=B, linetype=model)) +
+  geom_line() +
+  labs(y="predizione", linetype="modello", title="Grafico di interazione")
+```
+
+
+
+
+# Wafer etching
+
+Esperimento di studio del processo di erosione di fette di Silicio.
+
+Fattori:
+
+* A: distanza wafer-elettrodo
+* B: flusso di gas inerte
+* C: potenza del segnale RF
+* Y: velocità di erosione
+
+Costruiamo la griglia di dati:
+
+```{r}
+
+df <- fp_design_matrix(3, rep=2) %>% 
+  fp_add_names(
+    A="Distance",
+    B="Flow",
+    C="Power"
+  )
+
+df$Y = c(
+  550, 669, 633, 642,
+  1037, 749, 1075, 729,
+  604, 650, 601, 635,
+  1052, 868, 1063, 860
+)
+
+sum(df$Y)
+```
+
+Analisi del modello completo:
+
+```{r}
+df.lm <- lm(Y~A*B*C, data=df)
+anova(df.lm)
+```
+
+Revisione del modello considerando solo i fattori significativi:
+
+```{r}
+df.lm <- lm(Y~A*C, data=df)
+anova(df.lm)
+```
+Verifichiamo se serve una trasformazione:
+
+```{r}
+car::boxCox(df.lm, lambda=seq(-2, 4, 0.1))
+```
+
+Dato che non serve nessuna trasformazione, possiamo procedere con la verifica di adeguatezza del modello.
+
+> **Esercizio**: Eseguire la verifica di adeguatezza.
+
+```{r}
+df %>% 
+  add_residuals(df.lm) %>% 
+  add_predictions(df.lm) %>% {
+    (resid_plot(., RunOrder) + resid_plot(., A)) /
+    (resid_plot(., C) + resid_plot(., pred))
+  }
+```
+
+> Si osserva un pattern per l'ordine di esecuzione delle prove e per i valori predetti. È quindi possibile che la variazione di condizioni ambientali durante l'esecuzione delle prove abbia influito sui risultati. Come già visto, Box-Cox non suggerisce una revisione del modello, quindi l'unica soluzione sarebbe indagare sulle condizioni embientali e, eventualmente, ripetere la campagna in condizioni più stabili.
+
+
+Infine possiamo realizzare la superficie di risposta:
+
+```{r}
+expand.grid(
+  A = seq(-1, 1, 0.1), 
+  C = seq(-1, 1, 0.1)
+) %>% 
+  add_predictions(df.lm) %>% 
+  ggplot(aes(x=A, y=C, z=pred)) +
+  metR::geom_contour_fill() +
+  metR::geom_contour2(aes(label = round(after_stat(level), 2))) +
+  scale_x_continuous(
+    sec.axis = sec_axis(
+      ~ scales::rescale(., from=c(-1, 1), to=c(0.8, 1.2)),
+      name="distanza (mm)"
+    )
+  ) +
+  scale_y_continuous(
+    sec.axis = sec_axis(
+      \(x) scales::rescale(x, from=c(-1, 1), to=c(275, 325)),
+      name="potenza RF (W)"
+    )
+  ) +
+
+  scale_fill_viridis_c()
+```
+
+> **Esercizio**: realizzare i grafici di interazione.
+
+```{r}
+df %>% 
+  mutate(Cf=factor(C)) %>% 
+  add_predictions(df.lm) %>% 
+  ggplot(aes(x=A, y=pred, linetype=Cf)) +
+  geom_line() +
+  geom_point() +
+  geom_point(aes(y=Y, color=Cf)) +
+  labs(
+    x="Temperatura",
+    y="vel. filtrazione (l/min)", 
+    color="Conc.", linetype="Conc.")
+```
+
+> Il grafico di interazione è una visualizzazione alternativa della superficie di risposta, che riporta le due sezioni di essa corrispondenti al bordo inferiore e superiore del grafico a contorno della superficie di risposta stessa.
+
+# Misure ripetute
+
+Un ricercatore deve valutare l'effetto dei parametri di un processo di ossidazione superficiale di fette di silicio. Il processo mira ad ottenere uno strato superficiale isolante di $\mathrm{SiO_2}$, di **spessore controllato**, mediante esposizione delle fette ad un flusso di Ossigeno ad alta temperatura.
+
+È importante controllare sia lo spessore di ossido ottenuto (che è un indice di prestazione), sia l'uniformità di tale spessore (che è un indice di qualità). I parametri sono quindi:
+
+* A: temperatura
+* B: tempo 
+* C: pressione
+* D: flusso gas
+* Resa t: spessore **medio** di ossido
+* Resa v: varianza dello spessore in diversi punti della stessa fetta
+
+Si tratta di un piano fattoriale $2^4$, e per contenere i costi il ricercatore decide di non eseguire ripetizioni, ma piuttosto di ripetere **le misure** in quattro diverse posizioni di ciascuna fetta.
+
+La *design matrix* del PF è quindi:
+
+```{r}
+dm <- fp_design_matrix(4, rep=1) %>% 
+  fp_add_names(
+    A="Temp",
+    B="Time",
+    C="Pressure",
+    D="Flow"
+  )
+
+dm %>% head()
+```
+
+Le misure di spessore in 4 punti, `t1--t4`, **riportate nell'ordine standard di Yates**, sono disponibili in un file .csv separato:
+
+```{r}
+y <- read.csv(examples_url("duplicate.csv")) %>% 
+  mutate(StdOrder=1:n(), .before=t1)
+y %>% head()
+```
+
+Ora dobbiamo unire `y` con la tabella `dm`. Dato che le righe di `y` rispettano l'ordine di Yates (lo stesso seguito per la *design matrix*), possiamo collegare direttamente le due tabelle fianco a fianco mediante `bind_cols()`. 
+
+Successivamente dobbiamo calcolare la media e la varianza delle colonne `t1--t4`. Dobbiamo applicare le statistiche *per riga*, elemento per elemento, anziché *per colonna* come faremmo con un semplice `mutate()`. Per farlo dobbiamo prima istruire `mutate()` che le operazioni vanno condotte elemento per elemento: ciò si ottiene con `rowwise()`:
+
+```{r}
+df <- dm %>% 
+  select(-Y) %>% 
+  left_join(y) %>% 
+  rowwise() %>% # opera per righe
+  mutate(
+    t = mean(c(t1, t2, t3, t4)), # passo a mean() una selezione di colonne
+    v = var(c_across(t1:t4)) # oppure con c_across seleziono intervalli di col.
+  ) %>% 
+  ungroup() %>% # rimuovo il raggruppamento rowwise()
+  select(-(t1:t4)) # elimino le colonne t1:t4
+
+df %>% head() 
+```
+
+È un PF **non ripetuto**, quindi posso costruire il modello lineare **ma non posso analizzare la varianza** perché avendo un solo punto per trattamento non ho ridondanza e non posso calcolare le somme quadratiche. Questa situazione è evidenziata da `anova()` con un messaggio di allerta:
+
+```{r}
+df.lm <- lm(t~A*B*C*D, data=df)
+anova(df.lm)
+```
+
+Devo quindi applicare il metodo di Daniel: realizzo un grafico Q-Q degli effetti: quelli che staranno fuori dalla diagonale sono effetti significativi; gli altri possono essere rimossi dal modello.
+
+Posso crearmi direttamente il grafico notando che dal vettore nominato degli effetti:
+
+```{r}
+df.lm %>% effects() %>% round(2)
+```
+devo eliminare il primo elemento, chiamato `(Intercept)`, che rappresenta la media complessiva di tutte le misure.
+
+Mi costruisco quindi una tabella con tutti gli effetti in una colonna e i rispettivi nomi nell'altra, che userò come etichette nel grafico Q-Q:
+
+```{r warning=FALSE}
+tibble(
+  term = df.lm %>% effects() %>% names(),
+  value = df.lm %>% effects() %>% as.numeric()
+) %>%
+  tail(-1) %>% # tutte le righe meno la prima
+  # oppure uso slice_tail di dplyr:
+  # slice_tail(n=length(.$term)-1) %>% 
+  ggplot(aes(sample=value, label=term)) +
+  geom_qq_line(color="red") +
+  geom_qq() +
+  # Aggiungo una linea orizzontale per identificare i punti
+  geom_hline(aes(yintercept=value), alpha=0.5) +
+  # Aggiungo le etichette
+  geom_label(aes(x=-2.5, y=value, label=term), hjust="left", alpha=0.5)
+
+```
+
+Più rapidamente, posso usare la libreria `gghalfnorm` (da installare):
+
+```{r}
+df.lm %>% 
+  effects() %>% 
+  tail(-1) %>% 
+  gghalfnorm(labs = names(.), nlab=8)
+```
+
+**Nota**: si chiama *halfnorm* perché considera i valori assoluti dei campioni, che quindi sono distribuiti solo su metà della gaussiana. Questo approccio ha il vantaggio di rendere più densi i punti sfruttando la simmetria della distribuzione.
+
+```{r}
+daniel_plot_hn(lm(t~A*B*C*D, data=df), nlab=7)
+```
+
+
+In ogni caso, osserviamo che gli unici effetti significarvi sono `A`, `B`, `A:B`, `A:C`, `C`. Possiamo riformulare il modello e verificare con ANOVA:
+
+```{r}
+df.lm <- lm(t~A*B+A*C+B:D, data=df)
+anova(df.lm)
+```
+
+**Nota**: in caso di dubbio, è meglio essere conservativi nell'analisi del grafico Q-Q e includere anche termini dubbi (ad esempio `B:D`), e poi verificarne con l'ANOVA l'effettiva significatività.
+
+```{r}
+df.lm <- lm(t~A*B+A*C, data=df)
+anova(df.lm)
+```
+> **Esercizio**: verificare l'adeguatezza del modello
+
+```{r fig.dim=c(5,5)*1.2}
+df %>% 
+  add_residuals(df.lm) %>% 
+  add_predictions(df.lm) %>% {
+    (resid_plot(., RunOrder) + resid_plot(., A)) /
+    (resid_plot(., B) + resid_plot(., C)) /
+      resid_plot(., pred)
+  }
+```
+
+> Sembra evidente un patten nei valori predetti, quindi proviamo ad applicare Box-Cox:
+
+```{r}
+car::boxCox(df.lm, lambda=seq(-1, 10, 0.1))
+```
+
+> Ri-controllando i residui, tuttavia, la situazione non migliora molto:
+
+```{r fig.dim=c(5,5)*1.2}
+df %>% 
+  add_residuals(lm(t^6~A*B+A*C, data=.)) %>% 
+  add_predictions(lm(t^6~A*B+A*C, data=.)) %>% {
+    (resid_plot(., RunOrder) + resid_plot(., A)) /
+    (resid_plot(., B) + resid_plot(., C)) /
+      resid_plot(., pred^(1/6))
+  }
+```
+
+> In effetti, più che un pattern osserviamo una marcata differenza dei residui in corrispondenza del valore minimo predetto (attorno a 380 $\mu$m), che corrisponde poi ad una maggior distribuzione dei residui quando il fattore $ (Temperatura) è al livello -1. Più che ad un modello non adeguato, quindi, concludiamo che quando la temperatura è bassa il processo ha una maggior variabilità (e una minor resa). Dato che $A$ è il fattore più influente, le cose sono collegate. Quindi adottiamo come corretto il modello `t~A*B+A*C`.
+
+Possiamo finalmente produrre la superficie di risposta, usando il solito metodo. Rispetto al primo esempio, siccome abbiamo un fattore in più, calcoliamo le superfici di risposta per i due fattori più importanti `A` e `B`, e sfaccettiamo i grafici per 6 livelli di `C`.
+
+Inoltre, marchiamo con due curve di livello rosse il dominio operativo desiderato, cioè le combinazioni di parametri a cui corrisponde uno spessore di ossido nella fascia di tolleranza $400\pm 10~\mathrm{nm}$
+
+```{r}
+rs <- expand.grid(
+  A = seq(-1, 1, 0.1),
+  B = seq(-1, 1, 0.1),
+  C = seq(-1, 1, length.out=6)
+) %>% 
+  mutate(
+    Cf = glue("C: {C}") # Da usare come etichetta
+  ) %>% 
+  add_predictions(df.lm, var="t")
+
+rs %>% 
+  ggplot(aes(x=A, y=B, z=t)) +
+  geom_contour() +
+  geom_contour(breaks=c(-10, 10)+400, color="red") +
+  metR::geom_label_contour() +
+  facet_wrap(~Cf)
+```
+
+Ora dobbiamo analizzare la varianza dell'ossido. 
+
+```{r}
+lm(v~A*B*C*D, data=df) %>% 
+  daniel_plot_hn(nlab=5)
+```
+
+Il grafico è di difficile interpretazione, perché fuori dalla diagonale abbiamo soprattutto interazioni di alto livello, cosa poco credibile. Spesso ciò è indice di un modello non adatto, che richiede una trasformazione. Tuttavia, non avendo ancora ripetizioni, non possiamo applicare il metodo di Box-Cox; non ci resta quindi che provare alcune trasformazioni, più o meno a caso. È logico però aspettarsi che la varianza cresca poco o addirittura diminuisca all'aumentare dello spessore di ossido. Quindi le trasformazioni di interesse possono essere il logaritmo o l'inversa:
+
+```{r}
+# Logaritmo
+(lm(log(v)~A*B*C*D, data=df) %>% 
+  daniel_plot_hn(nlab=5)) +
+# Inversa
+(lm(1/v~A*B*C*D, data=df) %>% 
+  daniel_plot_hn(nlab=5)) 
+```
+
+La trasformazione con meno interazioni di alto livello fuori dalla diagonale è l'inversa:
+
+```{r}
+lm(1/v~A*B + A:D + B:D, data=df) %>% anova()
+```
+
+Tuttavia, visto che `D` non ha effetti sullo spessore lo rimuoviamo anche dal modello sulla varianza. Uniamo le due superfici di risposta, riportando la deviazione standard anziché la varianza (più comoda) e impostando una soglia minima alla deviazione standard dello spessore pari a $1.4~\mathrm{nm}$:
+
+```{r}
+df.lms <- lm(1/v~A*B, data=df)
+rs %>% 
+  add_predictions(df.lms, var="v") %>% 
+  ggplot(aes(x=A, y=B, z=sqrt(1/v))) +
+  geom_contour_filled(breaks=seq(0, 2, 0.1)) +
+  geom_contour(aes(z=t)) +
+  geom_contour(aes(z=t), breaks=c(390, 410), color="red") +
+  geom_contour(breaks =1.4, color="orange") +
+  metR::geom_label_contour(aes(z=t)) +
+  facet_wrap(~Cf) +
+  labs(fill="Dev. std.")
+```
+
+Quindi, le zone comprese tra le curve rosse e al di sopra di quella arancio rappresentano il **dominio operativo dei parametri**: cioè il processo va mantenuto all'interno di questo dominio per rispettare i requisiti sullo spessore e sulla varianza dello spessore dell'ossido di Silicio.
+
+
+# Impianto di filtrazione
+
+Questa volta il processo è una filtrazione per un liquame con sospensione solida. I parametri sono:
+
+* A: temperatura
+* B: differenza di pressione
+* C: concentrazione della specie solida
+* D: velocità di agitazione
+* Resa Y: velocità di filtrazione
+
+Si tratta di un PF $2^4$, ancora non replicato. La *matrice di progetto* è (per brevità, omettiamo l'ordine standard e casualizzato):
+
+```{r}
+dm <- fp_design_matrix(4, rep=1) %>% 
+  fp_add_names(
+    A="Temp", B="dPressure",
+    C="Conc", D="Stir"
+  ) %>% 
+  mutate(
+    Y=c(
+      45, 71, 48, 65,
+      68, 60, 80, 65,
+      43, 100, 45, 104,
+      75, 86, 70, 96
+    )
+  )
+
+dm$Y %>% sum()
+```
+
+Come sempre realizziamo prima un modello completo da verificare col metodo di Daniel:
+
+```{r}
+lm(Y~A*B*C*D, data=dm) %>% 
+  daniel_plot_hn(nlab=7)
+```
+
+Riformuliamo il modello con solo i termini `A`, `C`, `D` e le loro interazioni:
+
+```{r}
+lm(Y~A*C*D, data=dm) %>% anova()
+```
+
+La tabella ANOVA conferma che possiamo tenere solo le interazioni `A:C` e `A:D`:
+
+```{r}
+dm.lm <- lm(Y~A*C + A*D, data=dm)
+anova(dm.lm)
+```
+Verifichiamo i residui:
+
+```{r}
+dm %>% 
+  add_residuals(dm.lm) %>% 
+  add_predictions(dm.lm) %>% {
+    (resid_plot(., A) + resid_plot(., C)) /
+    (resid_plot(., D) + resid_plot(., pred))
+  }
+```
+
+I residui tendono ad allargarsi con il valore predetto, quindi è opportuno verificare se c'è una trasformazione Box-Cox adatta:
+
+```{r warning=FALSE}
+car::boxCox(dm.lm)
+```
+
+Il valore di $\lambda$ è vicino a -0.5, cioè l'inverso della radice: $y^*=1/\sqrt{y}$:
+
+```{r}
+dm.lm <- lm(1/sqrt(Y)~A*C+A*D, data=dm)
+anova(dm.lm)
+```
+Per i residui:
+
+```{r}
+dm %>% 
+  add_residuals(dm.lm) %>% 
+  add_predictions(dm.lm) %>% {
+    (resid_plot(., A) + resid_plot(., C)) /
+    (resid_plot(., D) + resid_plot(., pred))
+  }
+```
+
+Il modello sembra sensibilmente più adatto, quindi lo accettiamo definitivamente.
+
+Ci restano da realizzare i grafici di interazione (o la superficie di risposta, lasciata per esercizio, vedi soluzione a fine sezione). Per decidere come organizzare questi grafici è utile analizzare quali fattori hanno l'effetto maggiore.
+
+In questi casi è utile ordinare gli effetti dei fattori e delle interazioni in ordine decrescente per meglio valutarne l'importanza in modo da sapere su quali fattori conviene intervenire per avere il massimo guadagno sulla resa. Questo tipo di analisi può essere condotta efficacemente con il [diagramma di Pareto](https://it.wikipedia.org/wiki/Diagramma_di_Pareto), che riporta come barre il valore assoluto degli effetti (ordinati in modo decrescente) e come linea spezzata il peso cumulato degli effetti. Questo grafico consente di fare affermazioni del tipo "i primi $n$ termini pesano per l'80% del totale". 
+
+È il tipo di grafico che viene ad esempio utilizzato, ad esempio:
+
+* per analisi di censo: "il 5% della popolazione detiene il 90% della ricchezza"
+* per analisi di sensitività nella propagazione dell'incertezza: "i primi 3 termini sono responsabili dell'85% dell'incertezza complessiva"
+
+Nel nostro caso possiamo qualificare gli effetti dei termini del modello. Per semplicità, il grafico di Pareto può essere costruito con la funzione `pareto_chart()` messa a disposizione dal pacchetto `adas.utils`, sviluppato apposta per questo corso e da installare con il comando:
+
+```{r eval=FALSE, include=TRUE}
+devtools::install_github("pbosetti/adas.utils")
+```
+
+**ATTENZIONE**: accertarsi di aver installato almeno la versione 0.0.3. Se così non è, ripetere il comando di installazione e **riavviare R** (menu Session>Restart R).
+
+Consultare la documentazione con `help(package=adas.utils)`. Notare che il pacchetto fornisce anche altre funzioni che abbiamo incluso per ora in `my_lib.R`.
+
+La funzione `pareto_chart()` è una funzione generica, che accetta come primo argomento:
+
+* un qualsiasi data frame, nel qual caso richiede il nome di due colonne, una coi valori e una con le categorie;
+* un modello lineare, nel qual caso valuta gli effetti.
+
+In generale, per un data frame:
+
+```{r}
+set.seed(1)
+tibble(
+  val=rnorm(10, sd=5),
+  cat=LETTERS[1:length(val)]
+) %>% 
+  pareto_chart(labels=cat, values=val)
+```
+
+Nel nostro caso, possiamo confrontare il grafico di Pareto per il modello finale con il modello completo:
+
+```{r}
+pareto_chart(dm.lm) /
+pareto_chart(lm(Y~A*B*C*D, data=dm))
+```
+
+Si osserva che la curva cumulata ha un ginocchio pronunciato al di sopra dei primi 5 effetti che sono quelli statisticamente significativi. In ogni caso, i primi 5 effetti sono responsabili del 80% del contributo sul modello completo; nel modello ridotto agli effetti significativi (quello adottato per i grafici di interazione), il 70% della resa è governato dai fattori `A`, `C` e dalla loro interazione. In altre parole, la velocità di filtrazione è governata principalmente da temperatura e concentrazione.
+
+Quindi realizziamo i grafici di interazione tra `A` e `C`, sfaccettati per `D`, ricordandoci di anti-trasformare le predizioni (aggiunte con `add_predictions`):
+
+```{r}
+dm %>% 
+  mutate(Cf=factor(C), Df=glue("Vel. agitazione: {D}")) %>% 
+  add_predictions(dm.lm) %>% 
+  ggplot(aes(x=A, y=1/pred^2, linetype=Cf)) +
+  geom_line() +
+  geom_point() +
+  geom_point(aes(y=Y, color=Cf)) +
+  facet_wrap(~Df) +
+  labs(
+    x="Temperatura",
+    y="vel. filtrazione (l/min)", 
+    color="Conc.", linetype="Conc.")
+```
+
+Possiamo interpretarli come segue:
+
+* Se la concentrazione delle specie solide è bassa, aumentare la temperatura riduce la viscosità e quindi facilita la filtrazione
+* se la concentrazione è alta, ma la velocità di agitazione è bassa, le specie solide tendono a intasare prima il filtro, riducendo la velocità di filtrazione; aumentare la temperatura accelera questo fenomeno, e quindi riduce ulteriormente la velocità media
+* se la concentrazione è alta ma la velocità di agitazione è anche alta, viene evitata la saturazione del filtro, e la velocità di filtrazione in generale ne guadagna, anche aumentando la temperatura.
+
+Secondo logica, la differenza di pressione dovrebbe avere un effetto, ma l'analisi della varianza lo smentisce. In realtà, ciò non significa che la differenza di pressione non abbia effetto sulla velocità di filtrazione in assoluto, ma piuttosto che **per l'intervallo di pressione in oggetto** la variazione di velocità risultante non è statisticamente significativa.
+
+> **Esercizio**: La superficie di risposta corrisponde alle curve di livello:
+
+```{r}
+rs <- expand.grid(
+  A = seq(-1, 1, length.out=50),
+  C = seq(-1, 1, length.out=50),
+  D = c(-1, 1)
+) %>% 
+  add_predictions(dm.lm)
+
+rs %>% 
+  ggplot(aes(x=A, y=C, z=1/pred^2)) + 
+  # geom_contour() +
+  metR::geom_contour_fill(bins=15) +
+  metR::geom_contour2(aes(label=(after_stat(level)) %>% round(2)), bins=15) +
+  facet_wrap(~factor(D)) +
+  scale_fill_viridis_c()
+```
+
+
+
+## Filtrazione: CCD
+
+Il modello sopra descritto per l'impianto di filtrazione è un modello di primo grado in tutti i fattori. Avendo solo due livelli per fattore è evidente che non è possibile stimare alcun effetto di grado superiore al primo.
+
+Per verificare se sia necessario indagare una **curvatura della superficie di risposta** possiamo **aumentare** il piano fattoriale con un trattamento centrale, cioè la combinazione in cui tutti i fattori di interesse sono a livello 0 in unità codificate. Questo trattamento deve essere in genere ripetuto alcune volte. 
+
+Nel nostro caso ripetiamo il trattamento centrale 5 volte, aggiungendo i valori al data frame originale:
+
+```{r}
+dm.c <- dm %>% 
+  fp_augment_center(rep=5) %>% 
+  mutate(
+    Y = c(dm$Y, c(91, 90, 90, 89, 91))
+  )
+
+dm.c
+```
+
+Ora al modello `Y~A*C+A*D` ricavato sopra aggiungiamo il quadrato **di uno qualsiasi dei tre fattori**:
+
+```{r}
+dm.lmq <- lm(Y~A*C+A*D + I(C^2), data=dm.c)
+anova(dm.lmq)
+```
+
+Il termine quadratico `I(C^2)` risulta significativo, quindi la superficie di risposta è convessa e richiede un modello lineare (almeno) di secondo grado. Si noti che il trattamento zero ovviamente mi permette solo di capire **se c'è convessità**, ma non a quale (o a quali) dei fattori è dovuta questa convessità: per saperlo, dovremmo aggiungere anche i trattamenti assiali e valutare un modello in cui tutti i fattori compaiono al quadrato.
+
+Per brevità saltiamo questo passo, che sarebbe equivalente all'analisi del piano fattoriale $3^2$ visto sopra per la vita di un utensile.
+
+Visualizziamo invece i nuovi punti sul grafico di interazione: si nota come si trovino più in alto (punti verdi) rispetto al valore predetto dal modello quando tutti i fattori sono a 0, cioè un valore di circa 67 (punto nero).
+
+```{r}
+dm.c %>% 
+  add_predictions(dm.lm) %>% 
+  ggplot(aes(x=A, y=1/pred^2, linetype=factor(C))) +
+  geom_line() +
+  geom_point() +
+  geom_point(aes(y=Y, color=factor(C))) +
+  facet_wrap(~D)
+```
+
+
+# Piano fattoriale frazionato
+
+Studiamo un processo di **litografia di circuiti stampati**, dipendente da 5 parametri:
+
+* A: rapporto focale dell'ottica
+* B: tempo di esposizione
+* C: tempo di sviluppo del fotoresist
+* D: Parametro di dimensione della maschera
+* E: tempo di attacco chimico
+* Y: resa quantitativa del processo
+
+Per limitare il numero di prove realizziamo un piano fattoriale frazionato una volta, cioè $2^{5-1}$ non ripetuto, con relazione definente $I=ABCDE$.
+
+Dalla relazione definente possiamo calcolare i segni del quinto fattore `E`, cioè $E=ABCD$.
+
+```{r}
+dm <- fp_design_matrix(5) %>% 
+  fp_fraction(~A*B*C*D*E) %>% 
+  mutate(
+    Y = c(
+      9, 34, 16, 60,
+      6, 50, 21, 44,  
+      8, 52, 22, 45,
+      10, 30, 15, 63
+    )
+  )
+
+sum(dm$Y)
+```
+
+Dato che il piano fattoriale non è replicato, dobbiamo applicare il metodo di Daniel:
+
+```{r}
+lm(Y~A*B*C*D*E, data=dm) %>% 
+  daniel_plot_hn(nlab=10)
+```
+
+Cautelativamente eliminiamo solo i fattori `D` e `E`:
+
+```{r}
+lm(Y~A*B*C, data=dm) %>% anova()
+```
+
+Possiamo raffinare ulteriormente il modello:
+
+```{r}
+dm.lm <- lm(Y~A*B+C, data=dm)
+anova(dm.lm)
+```
+
+Possiamo valutare la relativa importanza degli effetti con un diagramma di Pareto:
+
+```{r}
+pareto_chart(dm.lm)
+```
+
+> **ESERCIZIO**: Sulla base del diagramma di Pareto, realizzare gli opportuni grafici di interazione.
+
+```{r}
+dm %>% 
+  mutate(Af=factor(A), Cf=glue("Sviluppo: {C}")) %>% 
+  add_predictions(dm.lm) %>% 
+  ggplot(aes(x=B, y=pred, linetype=Af)) +
+  geom_line() +
+  geom_point() +
+  geom_point(aes(y=Y, color=Af)) +
+  facet_wrap(~Cf) +
+  labs(
+    x="Focale",
+    y="Resa", 
+    color="Esposizione", linetype="Esposizione")
+```
+
+
+
+# Impianto di filtrazione v.2
+
+Richiamiamo la stessa design matrix sopra definita per l'impianto di filtrazione, un piano fattoriale $2^4$:
+
+```{r}
+dm <- fp_design_matrix(4, rep=1) %>% 
+  fp_add_names(
+    A="Temp", B="dPressure",
+    C="Conc", D="Stir"
+  ) %>% 
+  mutate(
+    Y=c(
+      45, 71, 48, 65,
+      68, 60, 80, 65,
+      43, 100, 45, 104,
+      75, 86, 70, 96
+    )
+  )
+
+dm$Y %>% sum()
+```
+
+Facciamo ora finta che sia stato invece realizzato un piano fattoriale frazionato $2^{4-1}$, con relazione $I=ABCD$. Ci basta quindi tenere solo metà della tabella, cioè solo le righe in cui vale la relazione definente, ri-arrangiata come $D=ABC$:
+
+```{r}
+dmf <- dm %>% 
+  filter(
+    D == A*B*C
+  )
+
+dmf
+```
+
+Non avendo repliche proviamo ad applicare il metodo di Daniel:
+
+```{r}
+lm(Y~A*B*C*D, data=dmf) %>% 
+  daniel_plot_hn(nlab=5)
+```
+
+Dato che i punti sono pochi, il grafico risulta poco chiaro. In questi casi è più utile il diagramma di Pareto:
+
+```{r}
+lm(Y~A*B*C*D, data=dmf) %>% 
+  pareto_chart()
+```
+Osserviamo che:
+
+* gli effetti `A`, `C` e `D` sono cospicui, dato che è poco probabile che lo siano anche le interazioni in alias `BCD`, `ABD` e `ABC`
+* l'effetto `AB+CD` è trascurabile, a meno che `AB` e `CD` siano entrambi grandi ma di segno inverso, il che è poco probabile
+* `BC` è in alias con `AD`
+* dato che `A`, `C` e `D` sono cospicui, possiamo aspettarci che lo siano `AC` e `AD`, piuttosto che `BC` e `BD`
+
+Quindi rivediamo il modello come:
+
+```{r}
+dmf.lm <- lm(Y~A*C+A*D, data=dmf)
+anova(dmf.lm)
+```
+
+Anche in questo caso frazionato, Box-Cox suggerisce una trasformazione $y^*=1/\sqrt{y}$:
+
+```{r}
+car::boxCox(dmf.lm)
+```
+
+```{r}
+dmf.lm <- lm(1/sqrt(Y)~A*C+A*D, data=dmf)
+```
+
+
+I grafici di interazione sono quindi:
+
+```{r}
+dmf %>% 
+  add_predictions(dmf.lm) %>% 
+  ggplot(aes(x=A, y=1/pred^2, linetype=factor(C))) +
+  geom_line() +
+  geom_point(aes(y=Y, color=factor(C))) +
+  geom_point() +
+  facet_wrap(~D) +
+  ylim(c(25, 105))
+```
+
+che risultano in buon accordo con il modello completo, nonostante siano stati ricavati con la metà delle informazioni:
+
+```{r}
+dm %>% 
+  add_predictions(lm(1/sqrt(Y)~A*C+A*D, data=.)) %>% 
+  ggplot(aes(x=A, y=1/pred^2, linetype=factor(C), group=factor(C))) +
+  geom_line() + 
+  geom_point(aes(y=Y, color=factor(C))) +
+  geom_point() +
+  facet_wrap(~D, labeller=label_both) +
+  ylim(c(25, 105))
+```
+
+> **ESERCIZIO**: confrontare su un'unica coppia di grafici di interazione i due modelli ottenuti dal piano fattoriale completo e da quello frazionato, usando colori diversi per le linee dei due casi. Suggerimento: usare `pivot_longer()`.
+
+```{r}
+dm %>% 
+  select(A:Y) %>% 
+  add_predictions(lm(1/sqrt(Y)~A*C+A*D, data=.), var="full") %>%
+  add_predictions(dmf.lm, data=., var="half") %>%
+  pivot_longer(-(A:Y), names_to = "model", values_to = "pred") %>% 
+  ggplot(aes(x=A, y=1/pred^2, linetype=factor(C), color=factor(model))) +
+  geom_line() + 
+  geom_point() +
+  facet_wrap(~D, labeller=label_both) +
+  ylim(c(25, 105)) +
+  labs(color="model", linetype="C", y="predizione")
+```
+> (*Tema avanzato*) In alternativa, posso usare `facet_grid()` e sfaccettare C e tipo di modello in righe e colonne di una griglia di grafici:
+
+```{r}
+dm %>% 
+  select(A:Y) %>% 
+  add_predictions(lm(1/sqrt(Y)~A*C+A*D, data=.), var="full") %>%
+  add_predictions(dmf.lm, data=., var="half") %>%
+  pivot_longer(-(A:Y), names_to = "model", values_to = "pred") %>% 
+  ggplot(aes(x=A, y=1/pred^2, linetype=factor(C))) +
+  geom_line() + 
+  geom_point() +
+  facet_grid( # Metti i grafici in griglia righe/colonne
+    D~model,  # D sulle righe, model sulle colonne della griglia di grafici  
+    labeller=labeller( # Solo un esempio per come personalizzare le etichette
+      D = c(`-1`="Vel. agitazione = -1", `1`="Vel. agitazione = 1"),
+      model = c(`full`="Modello completo", `half`="Modello frazionato")
+    )
+  ) +
+  labs(x="Temperatura", 
+       y="Velocità di filtrazione", 
+       linetype="Concentrazione")
+```
+
+> **NOTA**: `facet_grid()` è analoga a `facet_wrap()`: mentre la seconda sfaccetta i grafici per i diversi livelli assunti da **una** variabile categorica in sequenza, la prima realizza una matrice di grafici in cui righe e colonne riportano diversi livelli di **due** variabili categoriche.
