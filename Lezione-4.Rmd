@@ -236,7 +236,7 @@ Possiamo estrarre i parametri della regressione in questo modo:
 fit$m$getPars()
 ```
 
-Come sopra, per applicare il bootstrap dobbiamo definire una funzione che ci restutuisca i parametri a partire dai dati:
+Come sopra, per applicare il bootstrap dobbiamo definire una funzione che ci restituisca i parametri a partire dai dati:
 
 ```{r}
 stats <-function(data) {
@@ -282,9 +282,9 @@ Per visualizzare la *banda di confidenza* dobbiamo costruirci una funzione che, 
 
 ```{r}
 f_conf <- function(t, f, ci, upper=T) {
-  df <- expand.grid(ci)
-  df$f <- f(t, df$t0, df$bias, df$a)
-  return(ifelse(upper, max(df$f), min(df$f)))
+  df <- expand.grid(ci) %>% 
+    mutate(f = f(t, t0, bias, a))
+  return(list(lwr=min(df$f), upr=max(df$f)))
 }
 ```
 
@@ -292,13 +292,11 @@ Con questa funzione possiamo ora ottenere la banda di confidenza:
 
 ```{r}
 data %>% 
-  mutate(
-    upper = map_dbl(t, ~ f_conf(., f, ci)),
-    lower = map_dbl(t, ~ f_conf(., f, ci, upper=F))
-  ) %>% 
+  mutate(rng = map(t, ~ f_conf(., f, ci))) %>% 
+  unnest_wider(rng) %>% 
   ggplot(aes(x=t)) +
   geom_point(aes(y=y)) + 
   geom_line(aes(y=yn)) + 
-  geom_ribbon(aes(ymin=lower, ymax=upper), alpha=0.5)
+  geom_ribbon(aes(ymin=lwr, ymax=upr), alpha=0.5)
 ```
 
